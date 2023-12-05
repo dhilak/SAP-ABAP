@@ -1,0 +1,701 @@
+*&---------------------------------------------------------------------*
+*& Include Z_LOCAL_CLASS_FORMS_API
+*&---------------------------------------------------------------------*
+CLASS zcl_forms_api DEFINITION
+  FINAL
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+
+    TYPES ty_dref TYPE REF TO data .
+    TYPES:
+      tt_dref TYPE TABLE OF ty_dref .
+
+    DATA t_form_parameters TYPE tt_dref .
+    DATA t_return TYPE bapiret2_tab .
+
+    METHODS constructor
+      IMPORTING
+        VALUE(im_formname) TYPE fpname
+      RAISING
+        cx_fp_api .
+    METHODS execute
+      IMPORTING
+        !im_print TYPE boolean OPTIONAL .
+    METHODS set_fp_docparams
+      IMPORTING
+        !im_docparams TYPE sfpdocparams .
+    METHODS set_fp_outputparams
+      IMPORTING
+        !im_outputparams TYPE sfpoutputparams .
+    METHODS set_import_parameter_value
+      IMPORTING
+        !im_value           TYPE any
+      CHANGING
+        !ch_form_parameters TYPE tt_dref .
+    METHODS set_fp_form_dynamic .
+    METHODS set_language_parameters
+      IMPORTING
+        !im_langu   TYPE langu
+        !im_country TYPE land1 .
+    METHODS set_pre_print_params .
+    METHODS set_pre_noprint_params .
+    METHODS save_pdf_file
+      IMPORTING
+        !im_pdf_filename TYPE string .
+    METHODS send_pdf_by_email
+      IMPORTING
+        VALUE(im_sender)         TYPE adr6-smtp_addr
+        VALUE(im_text)           TYPE soli_tab
+        VALUE(im_subject)        TYPE so_obj_des
+        VALUE(im_recipients_tab) TYPE bcsy_smtpa
+        VALUE(im_pdf_filename)   TYPE so_obj_des .
+    METHODS get_binary_file .
+    METHODS get_spool_ids
+      RETURNING
+        VALUE(re_spoolids) TYPE tfpspoolid .
+    METHODS upload_file_to_server
+      IMPORTING
+        !im_file TYPE string .
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+
+    DATA v_formname TYPE fpname .
+    DATA v_langu TYPE langu .
+    DATA v_fm_name TYPE rs38l_fnam .
+    DATA s_fp_docparams TYPE sfpdocparams .
+    DATA s_fp_outputparams TYPE sfpoutputparams .
+    DATA s_fp_formoutput TYPE fpformoutput .
+    DATA s_fp_result TYPE sfpjoboutput .
+    CONSTANTS c_path TYPE string VALUE 'C:\TEMP\' ##NO_TEXT.
+    CONSTANTS c_file_extension TYPE string VALUE 'pdf' ##NO_TEXT.
+    CONSTANTS c_file_filter TYPE string VALUE '*.pdf' ##NO_TEXT.
+    DATA t_pdf_bin TYPE solix_tab .
+    DATA pdf_size TYPE i .
+    DATA t_function_parameters TYPE abap_func_parmbind_tab .
+    DATA t_function_except_parameters TYPE abap_func_excpbind_tab .
+    DATA c_bin TYPE char10 VALUE 'BIN' ##NO_TEXT.
+    DATA c_raw TYPE so_obj_tp VALUE 'RAW' ##NO_TEXT.
+    DATA c_pdf TYPE so_obj_tp VALUE 'PDF' ##NO_TEXT.
+    CONSTANTS c_docparams TYPE rs38l_par_ VALUE '/1BCDWB/DOCPARAMS' ##NO_TEXT.
+    CONSTANTS c_00 TYPE msgid VALUE '00' ##NO_TEXT.
+    CONSTANTS c_msgno TYPE msgno VALUE 1 ##NO_TEXT.
+    CONSTANTS c_local_printer TYPE rspopname VALUE 'LP01' ##NO_TEXT.
+
+    METHODS set_printer
+      IMPORTING
+        !im_dest TYPE rspopname .
+    METHODS call_adobe_form .
+    METHODS set_function_parameters
+      IMPORTING
+        !im_print TYPE boolean
+      EXCEPTIONS
+        invalid_parameter .
+    METHODS add_return_message
+      IMPORTING
+        !im_msgid TYPE msgid
+        !im_msgty TYPE msgty
+        !im_msgno TYPE msgno
+        !im_msgv1 TYPE msgv1 OPTIONAL
+        !im_msgv2 TYPE msgv2 OPTIONAL
+        !im_msgv3 TYPE msgv3 OPTIONAL
+        !im_msgv4 TYPE msgv4 OPTIONAL .
+ENDCLASS.
+
+
+
+CLASS zcl_forms_api IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_FORMS_API->ADD_RETURN_MESSAGE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_MSGID                       TYPE        MSGID
+* | [--->] IM_MSGTY                       TYPE        MSGTY
+* | [--->] IM_MSGNO                       TYPE        MSGNO
+* | [--->] IM_MSGV1                       TYPE        MSGV1(optional)
+* | [--->] IM_MSGV2                       TYPE        MSGV2(optional)
+* | [--->] IM_MSGV3                       TYPE        MSGV3(optional)
+* | [--->] IM_MSGV4                       TYPE        MSGV4(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD add_return_message.
+    MESSAGE ID im_msgid
+          TYPE im_msgty
+        NUMBER im_msgno
+          WITH im_msgv1
+               im_msgv2
+               im_msgv3
+               im_msgv4
+          INTO DATA(lv_message).
+
+    DATA(ls_return) = VALUE bapiret2( id         = sy-msgid
+                                      type       = sy-msgty
+                                      number     = sy-msgno
+                                      message_v1 = sy-msgv1
+                                      message_v2 = sy-msgv2
+                                      message_v3 = sy-msgv3
+                                      message_v4 = sy-msgv4
+                                      message    = lv_message ).
+
+    APPEND ls_return TO t_return.
+
+    RAISE EXCEPTION TYPE cx_demo_dyn_t100
+      MESSAGE ID sy-msgid
+      TYPE sy-msgty
+      NUMBER sy-msgno
+      WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_FORMS_API->CALL_ADOBE_FORM
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD call_adobe_form.
+    CALL FUNCTION 'FP_JOB_OPEN'
+      CHANGING
+        ie_outputparams = s_fp_outputparams
+      EXCEPTIONS
+        cancel          = 1
+        usage_error     = 2
+        system_error    = 3
+        internal_error  = 4
+        OTHERS          = 5.
+
+    IF sy-subrc = 0.
+      " Call the generated function module
+      CALL FUNCTION v_fm_name
+        PARAMETER-TABLE
+        t_function_parameters
+        EXCEPTION-TABLE
+        t_function_except_parameters.
+
+      IF sy-subrc <> 0.
+        " Error calling form
+        add_return_message( EXPORTING im_msgid = c_00
+                                      im_msgty = sy-abcde+4(1)
+                                      im_msgno = c_msgno
+                                      im_msgv1 = 'Error calling form' ).
+      ENDIF.
+
+      CALL FUNCTION 'FP_JOB_CLOSE'
+        IMPORTING
+          e_result       = s_fp_result
+        EXCEPTIONS
+          usage_error    = 1
+          system_error   = 2
+          internal_error = 3
+          OTHERS         = 4.
+    ELSE.
+      " Error calling form
+      add_return_message( EXPORTING im_msgid = c_00
+                                    im_msgty = sy-abcde+4(1)
+                                    im_msgno = c_msgno
+                                    im_msgv1 = 'Error calling form' ).
+    ENDIF.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_FORMS_API->CONSTRUCTOR
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_FORMNAME                    TYPE        FPNAME
+* | [!CX!] CX_FP_API
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD constructor.
+    v_formname = im_formname.
+
+    " Get the name of the generated function module
+    CALL FUNCTION 'FP_FUNCTION_MODULE_NAME'
+      EXPORTING
+        i_name     = v_formname
+      IMPORTING
+        e_funcname = v_fm_name.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_FORMS_API->EXECUTE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_PRINT                       TYPE        BOOLEAN(optional)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD execute.
+    set_function_parameters( im_print ).
+    call_adobe_form( ).
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_FORMS_API->GET_BINARY_FILE
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD get_binary_file.
+    t_pdf_bin = cl_document_bcs=>xstring_to_solix( ip_xstring = s_fp_formoutput-pdf ).
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_FORMS_API->GET_SPOOL_IDS
+* +-------------------------------------------------------------------------------------------------+
+* | [<-()] RE_SPOOLIDS                    TYPE        TFPSPOOLID
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD get_spool_ids.
+    re_spoolids = s_fp_result-spoolids.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_FORMS_API->SAVE_PDF_FILE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_PDF_FILENAME                TYPE        STRING
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD save_pdf_file.
+    DATA: lv_filename    TYPE string,
+          lv_path        TYPE string,
+          lv_fullpath    TYPE string,
+          lv_user_action TYPE i.
+
+    " Display save dialog window
+    cl_gui_frontend_services=>file_save_dialog( EXPORTING file_filter               = c_file_filter
+                                                          default_extension         = c_file_extension
+                                                          default_file_name         = im_pdf_filename
+                                                          initial_directory         = c_path
+                                                 CHANGING filename                  = lv_filename
+                                                          path                      = lv_path
+                                                          fullpath                  = lv_fullpath
+                                                          user_action               = lv_user_action
+                                               EXCEPTIONS cntl_error                = 1
+                                                          error_no_gui              = 2
+                                                          invalid_default_file_name = 3
+                                                          not_supported_by_gui      = 4
+                                                          OTHERS                    = 5 ).
+
+    IF sy-subrc = 0.
+      IF lv_user_action = 0.
+        get_binary_file( ).
+        cl_gui_frontend_services=>gui_download( EXPORTING filename = lv_fullpath
+                                                          filetype = c_bin
+                                                 CHANGING data_tab = t_pdf_bin
+                                               EXCEPTIONS OTHERS   = 1 ).
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_FORMS_API->SEND_PDF_BY_EMAIL
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_SENDER                      TYPE        ADR6-SMTP_ADDR
+* | [--->] IM_TEXT                        TYPE        SOLI_TAB
+* | [--->] IM_SUBJECT                     TYPE        SO_OBJ_DES
+* | [--->] IM_RECIPIENTS_TAB              TYPE        BCSY_SMTPA
+* | [--->] IM_PDF_FILENAME                TYPE        SO_OBJ_DES
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD send_pdf_by_email.
+    get_binary_file( ).
+
+    " Call BCS interface ----------------------------------
+    " Set sender e-mail address attribute
+    DATA(lo_sender) = cl_cam_address_bcs=>create_internet_address( im_sender ).
+
+    DATA(lo_send_request) = cl_bcs=>create_persistent( ).
+
+    " Create Mail Body
+    DATA(lo_document_txt) = cl_document_bcs=>create_document( i_type    = me->c_raw
+                                                              i_text    = im_text
+                                                              i_subject = im_subject ).
+
+    lo_send_request->set_document( lo_document_txt ).
+
+    " Add attachment document to send request
+    DATA(lo_document) = cl_document_bcs=>create_document( i_type    = me->c_pdf
+                                                          i_hex     = t_pdf_bin
+                                                          i_length  = CONV so_obj_len( xstrlen( s_fp_formoutput-pdf ) )
+                                                          i_subject = im_pdf_filename ).
+
+
+    lo_document_txt->add_document_as_attachment( im_document = lo_document ).
+
+    lo_send_request->set_sender( i_sender = lo_sender ).
+
+    LOOP AT im_recipients_tab INTO DATA(ls_recipient).
+      DATA(lo_recipient) = cl_cam_address_bcs=>create_internet_address( i_address_string = ls_recipient ).
+      lo_send_request->add_recipient( i_recipient = lo_recipient ).
+    ENDLOOP.
+
+    lo_send_request->set_send_immediately( abap_true ).
+
+    DATA(lo_result) = lo_send_request->send( i_with_error_screen = abap_true ).
+
+    COMMIT WORK.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_FORMS_API->SET_FP_DOCPARAMS
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_DOCPARAMS                   TYPE        SFPDOCPARAMS
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD set_fp_docparams.
+    s_fp_docparams = im_docparams.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_FORMS_API->SET_FP_FORM_DYNAMIC
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD set_fp_form_dynamic.
+    s_fp_docparams-dynamic = abap_true.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_FORMS_API->SET_FP_OUTPUTPARAMS
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_OUTPUTPARAMS                TYPE        SFPOUTPUTPARAMS
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD set_fp_outputparams.
+    s_fp_outputparams = im_outputparams.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_FORMS_API->SET_FUNCTION_PARAMETERS
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_PRINT                       TYPE        BOOLEAN
+* | [EXC!] INVALID_PARAMETER
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD set_function_parameters.
+    DATA: ls_function_export_parameters TYPE abap_func_parmbind,
+          lt_function_export_parameters TYPE TABLE OF abap_func_parmbind,
+
+          ls_function_import_parameters TYPE abap_func_parmbind,
+          lt_function_import_parameters TYPE TABLE OF abap_func_parmbind,
+
+          lt_function_parameters        TYPE TABLE OF abap_func_parmbind.
+
+    FIELD-SYMBOLS: <fs_form_parameter> TYPE any.
+
+    " Predefined parameters
+    IF im_print = abap_true.
+      set_pre_print_params( ).
+    ELSE.
+      set_pre_noprint_params( ).
+    ENDIF.
+
+    " Get Function modules parameters
+    SELECT *
+      INTO TABLE @DATA(lt_fupararef)
+      FROM fupararef
+     WHERE funcname = @v_fm_name
+     ORDER BY paramtype, pposition.
+
+    " Exporting parameters
+    " Form Processing Parameters
+    DATA(ls_fupararef) = COND #( WHEN line_exists( lt_fupararef[ parameter = c_docparams
+                                                                 paramtype = sy-abcde+8(1)
+                                                                 pposition = 1
+                                                                 optional  = abap_true ] )
+                                 THEN lt_fupararef[ parameter = c_docparams
+                                                    paramtype = sy-abcde+8(1)
+                                                    pposition = 1
+                                                    optional  = abap_true ] ).
+
+    IF ls_fupararef IS NOT INITIAL.
+      ls_function_export_parameters-name  = ls_fupararef-parameter.
+      ls_function_export_parameters-kind  = abap_func_exporting.
+      GET REFERENCE OF s_fp_docparams INTO ls_function_export_parameters-value.
+
+      APPEND ls_function_export_parameters TO lt_function_export_parameters.
+      CLEAR: ls_function_export_parameters.
+    ENDIF.
+
+    " Other exporting parameters
+    LOOP AT t_form_parameters INTO DATA(ls_form_parameter).
+      ASSIGN ls_form_parameter->* TO <fs_form_parameter>.
+
+      DATA(lv_absolute_name) = CONV string( cl_abap_typedescr=>describe_by_data( <fs_form_parameter> )->absolute_name+6 ).
+
+      IF lv_absolute_name CA '%'.
+        DATA(lv_type_kind) = CONV string( cl_abap_typedescr=>describe_by_data( <fs_form_parameter> )->type_kind ).
+      ENDIF.
+
+      ls_fupararef = COND #( WHEN line_exists( lt_fupararef[ paramtype = sy-abcde+8(1)
+                                               structure = lv_absolute_name ] )
+                             THEN lt_fupararef[ paramtype = sy-abcde+8(1)
+                                                structure = lv_absolute_name ]
+                             WHEN line_exists( lt_fupararef[ paramtype = sy-abcde+8(1)
+                                               structure = lv_type_kind ] )
+                             THEN lt_fupararef[ paramtype = sy-abcde+8(1)
+                                                structure = lv_type_kind ] ).
+
+      IF ls_fupararef IS NOT INITIAL.
+        ls_function_export_parameters-name  = ls_fupararef-parameter.
+        ls_function_export_parameters-kind  = abap_func_exporting.
+        GET REFERENCE OF <fs_form_parameter> INTO ls_function_export_parameters-value.
+
+        APPEND ls_function_export_parameters TO lt_function_export_parameters.
+        CLEAR: ls_function_export_parameters.
+      ELSE.
+        " Invalid import parameter
+        add_return_message( EXPORTING im_msgid = c_00
+                                      im_msgty = sy-abcde+4(1)
+                                      im_msgno = c_msgno
+                                      im_msgv1 = 'Invalid import parameter. TYPE:'
+                                      im_msgv2 = CONV msgv2( lv_absolute_name ) ).
+      ENDIF.
+    ENDLOOP.
+
+    " Importing parameters
+    LOOP AT lt_fupararef INTO ls_fupararef WHERE paramtype = sy-abcde+4(1).
+      ls_function_import_parameters-name  = ls_fupararef-parameter.
+      ls_function_import_parameters-kind  = abap_func_importing.
+      GET REFERENCE OF s_fp_formoutput INTO ls_function_import_parameters-value.
+
+      APPEND ls_function_import_parameters TO lt_function_import_parameters.
+      CLEAR: ls_function_import_parameters.
+    ENDLOOP.
+
+    " Exception parameters
+    t_function_except_parameters = VALUE abap_func_excpbind_tab( FOR ls_fupararef_for IN lt_fupararef
+                                                                   WHERE ( paramtype = abap_true )
+                                                                         (
+                                                                            name  = ls_fupararef_for-parameter
+                                                                            value = ls_fupararef_for-pposition
+                                                                          )
+                                                               ).
+
+
+    APPEND LINES OF lt_function_export_parameters TO lt_function_parameters.
+    APPEND LINES OF lt_function_import_parameters TO lt_function_parameters.
+
+    SORT lt_function_parameters BY kind name.
+
+    APPEND LINES OF lt_function_parameters TO t_function_parameters.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_FORMS_API->SET_IMPORT_PARAMETER_VALUE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_VALUE                       TYPE        ANY
+* | [<-->] CH_FORM_PARAMETERS             TYPE        TT_DREF
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD set_import_parameter_value.
+    DATA: dref TYPE ty_dref.
+
+    GET REFERENCE OF im_value INTO dref.
+    APPEND dref TO ch_form_parameters.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_FORMS_API->SET_LANGUAGE_PARAMETERS
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_LANGU                       TYPE        LANGU
+* | [--->] IM_COUNTRY                     TYPE        LAND1
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD set_language_parameters.
+    s_fp_docparams-langu   = im_langu.
+    s_fp_docparams-country = im_country.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_FORMS_API->SET_PRE_NOPRINT_PARAMS
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD set_pre_noprint_params.
+    s_fp_outputparams-getpdf    = abap_true.
+    s_fp_outputparams-nopdf     = abap_false.
+    s_fp_outputparams-nopreview = abap_true.
+    s_fp_outputparams-nodialog  = abap_true.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_FORMS_API->SET_PRE_PRINT_PARAMS
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD set_pre_print_params.
+    s_fp_outputparams-nopreview = abap_true.
+    s_fp_outputparams-nodialog  = abap_false.
+    s_fp_outputparams-dest      = c_local_printer.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_FORMS_API->SET_PRINTER
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_DEST                        TYPE        RSPOPNAME
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD set_printer.
+    s_fp_outputparams-dest = im_dest.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_FORMS_API->UPLOAD_FILE_TO_SERVER
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IM_FILE                        TYPE        STRING
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD upload_file_to_server.
+    OPEN DATASET im_file FOR OUTPUT IN BINARY MODE.
+    IF NOT sy-subrc IS INITIAL.
+      " Error uploading file to server
+      add_return_message( EXPORTING im_msgid = c_00
+                                    im_msgty = sy-abcde+4(1)
+                                    im_msgno = c_msgno
+                                    im_msgv1 = 'Error uploading file to server' ).
+    ENDIF.
+
+    get_binary_file( ).
+
+    LOOP AT t_pdf_bin ASSIGNING FIELD-SYMBOL(<fs_pdf_bin>).
+      TRANSFER <fs_pdf_bin> TO im_file.
+      IF NOT sy-subrc IS INITIAL.
+        " Error uploading file to server
+        add_return_message( EXPORTING im_msgid = c_00
+                                      im_msgty = sy-abcde+4(1)
+                                      im_msgno = c_msgno
+                                      im_msgv1 = 'Error uploading file to server' ).
+      ENDIF.
+    ENDLOOP.
+
+    CLOSE DATASET im_file.
+    IF NOT sy-subrc IS INITIAL.
+      " Error uploading file to server
+      add_return_message( EXPORTING im_msgid = c_00
+                                    im_msgty = sy-abcde+4(1)
+                                    im_msgno = c_msgno
+                                    im_msgv1 = 'Error uploading file to server' ).
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+***************************************************************************************************************************************************************************************************************
+Sample Report code
+***************************************************************************************************************************************************************************************************************
+*&---------------------------------------------------------------------*
+*& Report Z_TEST_FORMS_API
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT Z_TEST_FORMS_API.
+
+INCLUDE z_local_class_forms_api.
+
+START-OF-SELECTION.
+
+  DATA: lv_test_id TYPE boolean VALUE '0'.
+
+  BREAK-POINT.
+
+  CASE lv_test_id. " 0 - Send by e-mail, 1 - Save, 2 - Print, 3 - Upload to application server
+
+    WHEN '0'. " Test 0 - Send by e-mail
+      TRY.
+          DATA(lt_text)   = VALUE tsftext( ( tdformat = '*' tdline = 'Test' ) ).
+
+          DATA(lo_forms_api) = NEW zcl_forms_api( im_formname = 'FP_TEST_00' ).
+
+          lo_forms_api->set_import_parameter_value( EXPORTING im_value = lt_text
+                                                    CHANGING  ch_form_parameters = lo_forms_api->t_form_parameters ).
+          lo_forms_api->execute( ).
+
+          DATA(lt_bodytext)   = VALUE soli_tab( ( line = 'E-mail body' ) ).
+          DATA(lt_recipients) = VALUE bcsy_smtpa( ( 'recipients@recipients.com' ) ).
+
+          lo_forms_api->send_pdf_by_email( EXPORTING im_sender         = 'sender@sender.com'
+                                                     im_text           = lt_bodytext
+                                                     im_subject        = 'Test_AdobeForms_FP_TEST_00'
+                                                     im_recipients_tab = lt_recipients
+                                                     im_pdf_filename   = 'AbobeFormsByEmail' ).
+
+        CATCH cx_root INTO DATA(lo_root).
+          DATA(lv_message) = lo_root->get_text( ).
+      ENDTRY.
+
+    WHEN '1'. " Test 1 - Save
+      TRY.
+          DATA: ls_sapscript_header	TYPE thead,
+                ls_ssf_name	        TYPE tdtxtname,
+                lv_ssf_language	    TYPE tdspras.
+
+          lo_forms_api = NEW zcl_forms_api( im_formname = 'FP_TEST_01' ).
+          lo_forms_api->set_import_parameter_value( EXPORTING im_value = ls_sapscript_header
+                                                    CHANGING  ch_form_parameters = lo_forms_api->t_form_parameters ).
+
+          lo_forms_api->set_import_parameter_value( EXPORTING im_value = ls_ssf_name
+                                                    CHANGING  ch_form_parameters = lo_forms_api->t_form_parameters ).
+
+          lv_ssf_language = sy-langu.
+          lo_forms_api->set_import_parameter_value( EXPORTING im_value = lv_ssf_language
+                                                    CHANGING  ch_form_parameters = lo_forms_api->t_form_parameters ).
+
+          lo_forms_api->execute( ).
+          lo_forms_api->save_pdf_file( 'Test_AdobeForms_FP_TEST_01' ).
+
+        CATCH cx_root INTO lo_root.
+          lv_message = lo_root->get_text( ).
+      ENDTRY.
+
+    WHEN '2'. " Test 2 - Print
+      TRY.
+          DATA: ls_datatypes TYPE sfpdatatypes,
+                lv_mychar    TYPE c,
+                lv_mybyte    TYPE x,
+                lv_mystring  TYPE string,
+                lv_myxstring TYPE xstring,
+                lv_mydate    TYPE d,
+                lv_mytime    TYPE t,
+                lv_mynum     TYPE n,
+                lv_myint     TYPE i,
+                lv_myfloat   TYPE f,
+                lv_mypacked  TYPE p.
+
+          lo_forms_api = NEW zcl_forms_api( im_formname = 'FP_TEST_02' ).
+          lo_forms_api->set_import_parameter_value( EXPORTING im_value = ls_datatypes
+                                                    CHANGING  ch_form_parameters = lo_forms_api->t_form_parameters ).
+
+          lo_forms_api->set_import_parameter_value( EXPORTING im_value = lv_mychar
+                                                    CHANGING  ch_form_parameters = lo_forms_api->t_form_parameters ).
+
+          lo_forms_api->set_import_parameter_value( EXPORTING im_value = lv_mybyte
+                                                    CHANGING  ch_form_parameters = lo_forms_api->t_form_parameters ).
+
+          lo_forms_api->execute( im_print = abap_true ).
+
+        CATCH cx_root INTO lo_root.
+          lv_message = lo_root->get_text( ).
+      ENDTRY.
+
+    WHEN '3'. " Test 3 - Upload file to server (AL11)
+      TRY.
+          DATA: ls_customer    TYPE scustom,
+                lt_bookings    TYPE ty_bookings,
+                lt_connections TYPE ty_connections.
+
+          lo_forms_api = NEW zcl_forms_api( im_formname = 'FP_TEST_03' ).
+          lo_forms_api->set_import_parameter_value( EXPORTING im_value = ls_customer
+                                                    CHANGING  ch_form_parameters = lo_forms_api->t_form_parameters ).
+
+          lo_forms_api->set_import_parameter_value( EXPORTING im_value = lt_bookings
+                                                    CHANGING  ch_form_parameters = lo_forms_api->t_form_parameters ).
+
+          lo_forms_api->set_import_parameter_value( EXPORTING im_value = lt_connections
+                                                    CHANGING  ch_form_parameters = lo_forms_api->t_form_parameters ).
+
+          lo_forms_api->execute( im_print = abap_false ).
+          lo_forms_api->upload_file_to_server( 'Test_AdobeForms_FP_TEST_03.pdf' ).
+
+        CATCH cx_root INTO lo_root.
+          lv_message = lo_root->get_text( ).
+      ENDTRY.
+
+    WHEN OTHERS.
+
+  ENDCASE.
+
+  FREE lo_forms_api.
