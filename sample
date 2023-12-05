@@ -1,0 +1,1460 @@
+*&---------------------------------------------------------------------*
+*& Report ZTEST_SF
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT ztest_sf.
+
+TABLES: nast .
+DATA: gs_header  TYPE zsdp_str_taxin_frm_hdr,
+      gt_item    TYPE TABLE OF zsdp_str_taxin_frm_itm,
+      lt_item    TYPE STANDARD TABLE OF zsdp_str_taxin_frm_itm WITH HEADER LINE,
+      gs_item    TYPE  zsdp_str_taxin_frm_itm,
+      kt_item    TYPE TABLE OF zsdp_str_taxin_frm_itm,
+      ks_item    TYPE  zsdp_str_taxin_frm_itm,
+      ht_item    TYPE TABLE OF zsdp_str_taxin_frm_itm,
+      hs_item    TYPE  zsdp_str_taxin_frm_itm,
+      mt_item    TYPE TABLE OF zsdp_str_taxin_frm_itm,
+      ms_item    TYPE  zsdp_str_taxin_frm_itm,
+      v_tabix    TYPE i,
+      count      TYPE i,
+      discount   TYPE zamount,
+      unit_price TYPE zamount.
+
+
+DATA: posnr TYPE posnr_va,
+      aubel TYPE vbeln_va,
+      matnr TYPE vbrp-matnr,
+      aupos TYPE posnr_va,
+      chk   TYPE c.
+
+DATA :tcs_tax1 TYPE   vfprc_element_amount.
+
+nast-objky = '2021150011' .
+
+DATA: sno(3)      TYPE c  VALUE '0',
+      lv_knumv    TYPE vbrk-knumv,
+      lt_lines    TYPE STANDARD TABLE OF tline,
+      lv_string   TYPE string,
+      lv_matnr    TYPE  thead-tdname,
+      lv_cust     TYPE thead-tdname,
+      lv_vbeln_d  TYPE thead-tdname,
+      lv_text     TYPE thead-tdname,
+      tax_s       TYPE kwert,
+      tax_i       TYPE kwert,
+      tax_c       TYPE kwert,
+      con_wk      TYPE kposn,
+      pkg_wt(20)  TYPE c,
+      pack_wt(20) TYPE c,
+      tot_wt(20)  TYPE c,
+      pkgs        TYPE ntgew,
+      gross       TYPE brgew,
+      tot_pkgs    TYPE ntgew.
+
+
+REFRESH : gt_item.
+CLEAR gs_header.
+SELECT  SINGLE vb~vbeln,
+                vb~zzgstreference,
+               vb~fkart,
+               vb~fkdat,
+               vb~waerk,
+               vb~knumv,
+               vb~regio,
+               vb~bukrs,
+               vb~kunrg,
+               vb~zterm,
+               vb~erzet,
+               vb~erdat,
+               vb~xblnr,
+               vb~fksto,
+               vb~zzlrno,
+               vb~zzlrdt,
+               vb~zzvehl,
+               vb~zzeway,
+               vb~zzindet,
+               vb~zzdesp,
+               vb~zzdest,
+               vb~zztrans,
+               vb~zzterm,
+               vb~zzprec,
+               vb~zzplace,
+               vb~zzport,
+               vb~zzmarks,
+               vb~zzkind,
+                vb~zzvessl,
+               vb~zzpdes,
+               vb~zzfinal,
+               vb~zzpallet,
+               vb~zzeinvoice_no,
+               t1~butxt,
+               t1~adrnr,
+               ac~name1,
+               ac~city1,
+               ac~post_code1,
+               ac~tel_extens,
+               ac~tel_number,
+               a6~smtp_addr,
+               tv~spras,
+               tv~vtext,
+               df~taxnumxl,
+               t5~ztag1,
+               tw~text1,
+               tk~vtext AS vtext1,
+               cad~gstin
+         FROM vbrk AS vb
+         LEFT OUTER  JOIN t001 AS t1
+         ON ( vb~bukrs = t1~bukrs )
+         LEFT OUTER JOIN adr6 AS a6
+         ON ( t1~adrnr = a6~addrnumber )
+         LEFT OUTER JOIN adrc AS ac
+         ON ( t1~adrnr = ac~addrnumber )
+         LEFT OUTER JOIN tvzbt AS tv
+         ON ( vb~zterm = tv~zterm )
+         LEFT OUTER JOIN t052u AS tw
+         ON ( vb~zterm = tw~zterm AND tw~spras = 'E' )
+         LEFT OUTER JOIN tvfkt AS tk
+         ON ( vb~fkart = tk~fkart AND tk~spras = 'E' )
+         LEFT OUTER JOIN dfkkbptaxnum AS df
+         ON ( vb~kunrg = df~partner )
+         LEFT OUTER JOIN j_1bbranch AS cad
+  ON ( cad~bukrs = vb~bukrs )
+         LEFT OUTER JOIN t052 AS t5
+         ON ( t5~zterm = vb~zterm )
+         INTO @DATA(ls_vbrk)
+         WHERE  ( vbeln = @nast-objky+0(10) AND tv~spras = 'E' ).
+IF sy-subrc = 0.
+  gs_header-vbeln = ls_vbrk-vbeln.
+  gs_header-zzgstreference = ls_vbrk-zzgstreference.
+  IF gs_header-zzgstreference IS INITIAL.
+    gs_header-zzgstreference = ls_vbrk-vbeln.
+  ENDIF.
+  gs_header-fkart = ls_vbrk-fkart.
+  gs_header-head_text = ls_vbrk-vtext1.
+  gs_header-fkdat = ls_vbrk-fkdat.
+  gs_header-waerk = ls_vbrk-waerk.
+  gs_header-erdat = ls_vbrk-erdat.
+  gs_header-erzet = ls_vbrk-erzet.
+  gs_header-butxt = ls_vbrk-butxt.
+  gs_header-fksto = ls_vbrk-fksto.
+  gs_header-xblnr = ls_vbrk-xblnr.
+  gs_header-name3 = ls_vbrk-name1.
+  gs_header-text1 = ls_vbrk-text1.
+  gs_header-city3 = ls_vbrk-city1.
+  gs_header-cgstno = ls_vbrk-gstin.
+
+  gs_header-post_code3 = ls_vbrk-post_code1.
+  gs_header-smtp_addr = ls_vbrk-smtp_addr.
+  gs_header-vtext = ls_vbrk-vtext.
+  lv_knumv = ls_vbrk-knumv.
+  gs_header-pmdt = ls_vbrk-fkdat + ls_vbrk-ztag1.
+
+  gs_header-zzindet = ls_vbrk-zzindet.
+  gs_header-zzlrno = ls_vbrk-zzlrno .
+  gs_header-zzlrdt = ls_vbrk-zzlrdt.
+  gs_header-zzvehl = ls_vbrk-zzvehl.
+  gs_header-zzeway = ls_vbrk-zzeway.
+  gs_header-zzterm    = ls_vbrk-zzterm  .
+  gs_header-zzprec    = ls_vbrk-zzprec  .
+  gs_header-zzplace   = ls_vbrk-zzplace .
+  gs_header-zzport    = ls_vbrk-zzport  .
+  gs_header-zzmarks   = ls_vbrk-zzmarks .
+  gs_header-zzvessl   = ls_vbrk-zzvessl .
+  gs_header-zzpdes    = ls_vbrk-zzpdes  .
+  gs_header-zzfinal   = ls_vbrk-zzfinal .
+  gs_header-zzpallet  = ls_vbrk-zzpallet.
+  gs_header-zzkind = ls_vbrk-zzkind.
+  gs_header-zzdest = ls_vbrk-zzdest.
+  gs_header-zzeinvoice_no = ls_vbrk-zzeinvoice_no.
+  gs_header-bukrs = ls_vbrk-bukrs.
+
+  IF ls_vbrk-zztrans IS NOT INITIAL.
+
+    SELECT SINGLE *  FROM ztransport INTO @DATA(lsk_ztransport) WHERE ztr_no = @ls_vbrk-zztrans.
+
+    IF lsk_ztransport-ztr_name IS NOT INITIAL.
+
+      gs_header-trans_name = lsk_ztransport-ztr_name.
+
+    ENDIF.
+
+  ENDIF.
+
+
+  gs_header-zzdesp = ls_vbrk-zzdesp.
+
+ENDIF.
+
+SELECT kp~vbeln,
+       kp~parvw,
+       kp~kunnr,
+       kp~lifnr,
+       kn~land1,
+       kn~j_1ipanno,
+*         kn~name1,
+*         kn~name2,
+*         kn~name3,
+       kn~regio,
+       kn~stras,
+       kn~telf1,
+       kn~adrnr,
+       ad~city1,
+       ad~city2,
+       ad~name1,
+       ad~name2,
+       ad~name3,
+       ad~name4,
+       ad~house_num1,
+       ad~str_suppl1,
+       ad~str_suppl2,
+       ad~str_suppl3,
+       ad~street,
+       ad~post_code1,
+       ad~country,
+       ad~region,
+       ad1~name1 AS ag_name,
+       ad1~name2 AS ag_name1,
+       t5~bezei,
+       tt~landx,
+       df~taxnum,
+       df~taxnumxl
+       FROM vbpa AS kp
+       LEFT OUTER JOIN kna1 AS kn
+       ON ( kp~kunnr = kn~kunnr )
+       LEFT OUTER JOIN lfa1 AS la
+       ON ( kp~lifnr = la~lifnr )
+       LEFT OUTER JOIN adrc AS ad
+       ON ( kn~adrnr = ad~addrnumber )
+       LEFT OUTER JOIN adrc AS ad1
+       ON ( la~adrnr = ad1~addrnumber )
+       LEFT OUTER JOIN t005u AS t5
+       ON ( kn~regio = t5~bland AND kn~land1 = t5~land1 AND t5~spras = 'E' )
+       LEFT OUTER JOIN t005t AS tt
+       ON (  kn~land1 = tt~land1 AND tt~spras = 'E' )
+       LEFT OUTER JOIN dfkkbptaxnum AS df
+       ON ( kn~kunnr = df~partner AND  taxtype = 'IN3')
+       INTO TABLE @DATA(lt_kna1) WHERE kp~vbeln = @ls_vbrk-vbeln.
+IF sy-subrc = 0.
+  LOOP AT lt_kna1 ASSIGNING FIELD-SYMBOL(<lfs_kna1>).
+    CASE <lfs_kna1>-parvw.
+      WHEN 'BP' OR 'RE'.
+
+*          CONCATENATE <lfs_kna1>-name1 ' ' <lfs_kna1>-name2 INTO gs_header-name1 SEPARATED BY space.
+        gs_header-name1 = <lfs_kna1>-name1.
+        gs_header-name3 = <lfs_kna1>-name2.
+        gs_header-stras = <lfs_kna1>-stras.
+        gs_header-city1 = <lfs_kna1>-city1.
+        gs_header-city4 = <lfs_kna1>-city2.
+        gs_header-house_num1 = <lfs_kna1>-house_num1.
+        gs_header-str_suppl1 = <lfs_kna1>-str_suppl1.
+        gs_header-str_suppl2 = <lfs_kna1>-str_suppl2.
+        gs_header-str_suppl3 = <lfs_kna1>-str_suppl3.
+        gs_header-street = <lfs_kna1>-street.
+        gs_header-post_code1 = <lfs_kna1>-post_code1.
+        gs_header-land1 = <lfs_kna1>-land1.
+        gs_header-landx = <lfs_kna1>-landx.
+        gs_header-bezei1 = <lfs_kna1>-bezei.
+        gs_header-pan_no1 = <lfs_kna1>-j_1ipanno.
+        gs_header-b_regio = <lfs_kna1>-region.
+        gs_header-gstno_suppl = <lfs_kna1>-taxnum.
+        IF  gs_header-gstno_suppl  IS INITIAL.
+          gs_header-gstno_suppl = <lfs_kna1>-taxnumxl.
+        ENDIF.
+        CONDENSE: <lfs_kna1>-name1, <lfs_kna1>-name2, <lfs_kna1>-name3, <lfs_kna1>-name4.
+        gs_header-name1_164 = |{ <lfs_kna1>-name1 } { <lfs_kna1>-name2 } { <lfs_kna1>-name3 } { <lfs_kna1>-name4 }|. "(*-*)"Added by Manmeet [11.02.2022 17:48:43]
+
+
+      WHEN 'SP' OR 'WE'.
+
+*          CONCATENATE <lfs_kna1>-name1 ' ' <lfs_kna1>-name2 INTO gs_header-name2 SEPARATED BY space.
+        gs_header-name2 = <lfs_kna1>-name1.
+        gs_header-name4 = <lfs_kna1>-name2.
+        gs_header-stras1 = <lfs_kna1>-stras.
+        gs_header-city2 = <lfs_kna1>-city1.
+        gs_header-city5 = <lfs_kna1>-city2.
+        gs_header-house_num2 = <lfs_kna1>-house_num1.
+        gs_header-str_suppl4 = <lfs_kna1>-str_suppl1.
+        gs_header-str_suppl5 = <lfs_kna1>-str_suppl2.
+        gs_header-str_suppl6 = <lfs_kna1>-str_suppl3.
+        gs_header-street1 = <lfs_kna1>-street.
+        gs_header-post_code2 = <lfs_kna1>-post_code1.
+        gs_header-land2 = <lfs_kna1>-land1.
+        gs_header-landx1 = <lfs_kna1>-landx.
+        gs_header-bezei2 = <lfs_kna1>-bezei.
+        gs_header-pan_no2 = <lfs_kna1>-j_1ipanno.
+        gs_header-d_regio = <lfs_kna1>-region.
+        gs_header-gstno_ship = <lfs_kna1>-taxnum.
+        IF  gs_header-gstno_ship  IS INITIAL.
+          gs_header-gstno_ship = <lfs_kna1>-taxnumxl.
+        ENDIF.
+
+        gs_header-name2_164 = |{ <lfs_kna1>-name1 } { <lfs_kna1>-name2 } { <lfs_kna1>-name3 } { <lfs_kna1>-name4 }|. "(*-*)"Added by Manmeet [11.02.2022 17:48:43]
+
+
+      WHEN 'ES'.
+
+        CONCATENATE <lfs_kna1>-ag_name <lfs_kna1>-ag_name1 INTO gs_header-agent_name SEPARATED BY ' ' .
+
+
+
+    ENDCASE.
+  ENDLOOP.
+ENDIF.
+
+SELECT vb~vbeln,
+       vb~posnr,
+       vb~fkimg,
+       vb~meins,
+       vb~vgbel,
+*         vb~zzpak,
+*         vb~vgpos,
+       vb~aubel,
+       vb~aupos,
+       vb~vkorg_auft,
+       vb~vtweg_auft,
+       vb~matnr,
+       vb~arktx,
+       vb~werks,
+       vb~vstel,
+       vk~vbeln AS vbeln1,
+*         vk~inco1,
+*         vk~vsart,
+*         vk~bstkd,
+*         vk~bstdk,
+       ma~aeszn,
+       ma~zrev_no,
+       ma~zpart_no,
+       ma~ntgew,
+       ma~brgew,
+       ma~gewei,
+        ma~mtart,
+  ma~vhart,
+*         ma~zsingle_pack_wt,
+       mc~steuc,
+       va~kunnr,
+       va~vkbur,
+       vp~posnr AS posnr1,
+*         vp~zssi_no,
+*         vp~zzpo_line,
+*         vp~zzpo_line,
+       df~taxnum,
+       df~taxnumxl,
+       kd~kdmat,
+       kd~postx,
+*         kn~j_1ipanno,
+*         kd~zpartid,
+*         pm~pakcode,
+*         pm~paktype,
+*        pm~pakweg,
+*       pm~pakqty,
+*        pm~pakbox,
+
+*         ti~bezei,
+*         li~ztrans_name,
+*         li~zvehicle_no,
+*         li~zzremarks,
+       li~vbeln AS vbeln_d
+*         t1~bezei AS bezei1
+       FROM vbrp AS vb
+      LEFT OUTER JOIN vbkd AS vk
+       ON ( vb~aubel = vk~vbeln AND vb~aupos = vk~posnr  )
+       LEFT OUTER JOIN mara AS ma
+       ON ( vb~matnr = ma~matnr )
+       LEFT OUTER JOIN marc AS mc
+       ON ( vb~matnr = mc~matnr AND vb~werks = mc~werks )
+       LEFT OUTER JOIN vbak AS va
+       ON ( va~vbeln = vb~aubel )
+*         LEFT OUTER JOIN kna1 AS kn
+*         ON ( va~kunnr = kn~kunnr )
+*    LEFT OUTER JOIN zpacking_master AS pm
+*         ON ( vb~zzpak = pm~pakcode )
+       LEFT OUTER JOIN knmt AS kd
+       ON ( vb~matnr = kd~matnr AND vb~vkorg_auft = kd~vkorg AND vb~vtweg_auft = kd~vtweg AND va~kunnr = kd~kunnr )
+       LEFT OUTER JOIN vbap AS vp
+       ON ( vp~vbeln = vb~aubel AND vp~posnr = vb~aupos )
+       LEFT OUTER JOIN dfkkbptaxnum AS df
+       ON ( va~kunnr = df~partner AND  taxtype = 'IN3')
+*        LEFT OUTER JOIN tinct AS ti
+*         ON ( vk~inco1 = ti~inco1 AND spras = @sy-langu )
+      LEFT OUTER JOIN likp AS li
+       ON ( vb~vgbel = li~vbeln )
+*        LEFT OUTER JOIN t173t AS t1
+*         ON ( vk~vsart = t1~vsart AND t1~spras = @sy-langu )
+       INTO TABLE @DATA(lt_vbrp)
+       WHERE vb~vbeln = @nast-objky+0(10).
+
+IF sy-subrc = 0.
+  SORT lt_vbrp BY posnr.
+  DELETE lt_vbrp WHERE  fkimg IS INITIAL.
+
+  DELETE lt_vbrp WHERE  mtart = 'PM'.
+  DELETE lt_vbrp WHERE  vhart IS NOT INITIAL.
+  LOOP AT lt_vbrp ASSIGNING FIELD-SYMBOL(<lfs_vbrp>).
+    sno = sno + 1.
+    gs_item-sno = sno.
+    gs_item-aubel = <lfs_vbrp>-aubel.
+
+    IF <lfs_vbrp>-kdmat IS NOT INITIAL.
+
+      gs_item-cmatnr = <lfs_vbrp>-kdmat.
+
+    ENDIF.
+
+*      ELSE.
+
+    gs_item-matnr = <lfs_vbrp>-matnr.
+
+
+
+    gross = gross + ( <lfs_vbrp>-brgew * <lfs_vbrp>-fkimg ) .
+
+    IF <lfs_vbrp>-gewei = 'G'.
+
+      gross = gross / 1000.
+    ENDIF.
+
+
+
+
+    gs_item-posnr = <lfs_vbrp>-posnr.
+*      gs_item-zpartid = <lfs_vbrp>-zpartid.
+    gs_item-aupos = <lfs_vbrp>-aupos.
+    gs_item-meins = <lfs_vbrp>-meins.
+    gs_item-fkimg = <lfs_vbrp>-fkimg.
+
+    IF gs_item-meins = 'NOS'.
+
+      gs_item-i_qty = <lfs_vbrp>-fkimg.
+
+      REPLACE '.000' WITH ' ' INTO gs_item-i_qty.
+
+      CONDENSE gs_item-i_qty.
+
+    ENDIF.
+
+*      gs_item-zssi_no = <lfs_vbrp>-zssi_no.
+*      gs_item-zzpo_line = <lfs_vbrp>-zzpo_line.
+
+    DATA(lv_aubel) = <lfs_vbrp>-aubel.
+
+    IF <lfs_vbrp>-aubel IS NOT INITIAL.
+
+      SELECT SINGLE * FROM vbkd INTO @DATA(ls_vbkd) WHERE vbeln = @<lfs_vbrp>-aubel AND posnr = '000000'.
+
+      IF ls_vbkd-bstkd IS NOT INITIAL.
+
+        gs_item-bstkd = ls_vbkd-bstkd .
+        gs_item-bstdk = ls_vbkd-bstdk.
+
+      ENDIF.
+
+      CLEAR:ls_vbkd.
+
+    ENDIF.
+
+    IF gs_header-out_date IS INITIAL.
+
+      SELECT SINGLE * FROM zgate_inward_sai INTO @DATA(ls_zgate_inward_sai) WHERE vbeln = @<lfs_vbrp>-vbeln AND posnr = @<lfs_vbrp>-posnr.
+
+      IF ls_zgate_inward_sai-gateno IS NOT INITIAL.
+
+        SELECT SINGLE * FROM zgate_inward_sa INTO @DATA(ls_zgate_inward_sa) WHERE gateno = @ls_zgate_inward_sai-gateno.
+
+        IF ls_zgate_inward_sa-bldat IS NOT INITIAL.
+
+          gs_header-out_date = ls_zgate_inward_sa-bldat.
+
+
+        ENDIF.
+
+        IF ls_zgate_inward_sa-outime IS NOT INITIAL.
+
+          gs_header-out_time = ls_zgate_inward_sa-outime.
+
+        ENDIF.
+
+      ENDIF.
+
+      CLEAR:ls_zgate_inward_sai,ls_zgate_inward_sa-outime.
+
+    ENDIF.
+
+
+    gs_item-werks = <lfs_vbrp>-werks.
+
+    gs_item-aeszn = <lfs_vbrp>-aeszn.
+    gs_item-steuc = <lfs_vbrp>-steuc.
+
+    IF gs_item-steuc IS NOT INITIAL.
+
+      SELECT SINGLE * FROM t604n  INTO @DATA(ls_t604n) WHERE steuc = @gs_item-steuc AND spras = 'E' AND land1 = 'IN'.
+
+      IF ls_t604n-text1 IS NOT INITIAL.
+
+        gs_item-hsn_dis = ls_t604n-text1.
+
+      ENDIF.
+
+      CLEAR:ls_t604n.
+
+    ENDIF.
+
+
+*      gs_item-zzpo_line = <lfs_vbrp>-zzpo_line.
+    gs_item-zrev_no = <lfs_vbrp>-zrev_no.
+    gs_item-zpart_no = <lfs_vbrp>-zpart_no.
+    lv_matnr = gs_item-matnr.
+
+    CLEAR:lv_string,lt_lines.
+
+    CONCATENATE <lfs_vbrp>-vkorg_auft <lfs_vbrp>-vtweg_auft <lfs_vbrp>-kunnr  INTO lv_cust.
+
+*    CONCATENATE lv_matnr space space space space ls_knmt-matnr INTO lv_matnr SEPARATED BY space.
+
+*    CONCATENATE lv_matnr ls_knmt-matnr INTO lv_matnr.
+
+    CONCATENATE lv_cust <lfs_vbrp>-matnr INTO lv_cust.
+
+    CALL FUNCTION 'READ_TEXT'
+      EXPORTING
+        client                  = sy-mandt
+        id                      = '0001'
+        language                = sy-langu
+        name                    = lv_cust
+        object                  = 'KNMT'
+*       ARCHIVE_HANDLE          = 0
+*       LOCAL_CAT               = ' '
+*     IMPORTING
+*       HEADER                  =
+*       OLD_LINE_COUNTER        =
+      TABLES
+        lines                   = lt_lines
+      EXCEPTIONS
+        id                      = 1
+        language                = 2
+        name                    = 3
+        not_found               = 4
+        object                  = 5
+        reference_check         = 6
+        wrong_access_to_archive = 7
+        OTHERS                  = 8.
+*    IF sy-subrc <> 0.
+*      exit.
+*    ENDIF.
+    IF sy-subrc = 0.
+      LOOP AT lt_lines ASSIGNING FIELD-SYMBOL(<ls_lines15>).
+        CONCATENATE  lv_string <ls_lines15>-tdline  INTO lv_string .
+      ENDLOOP.
+    ENDIF.
+
+    IF lv_string IS NOT INITIAL.
+
+*        gs_item-tline = lv_string.
+      gs_item-cmat_dis = lv_string.
+
+    ENDIF.
+
+    IF gs_item-cmat_dis IS INITIAL.
+
+      IF <lfs_vbrp>-postx IS NOT INITIAL.
+
+*          gs_item-tline = <lfs_vbrp>-postx.
+        gs_item-cmat_dis = <lfs_vbrp>-postx.
+
+      ENDIF.
+
+    ENDIF.
+
+    IF gs_item-tline IS INITIAL.
+
+      CONCATENATE <lfs_vbrp>-vbeln <lfs_vbrp>-posnr INTO lv_text.
+
+      CLEAR lv_string.
+      REFRESH lt_lines.
+      CALL FUNCTION 'READ_TEXT'
+        EXPORTING
+          client                  = sy-mandt
+          id                      = '0001'
+          language                = sy-langu
+          name                    = lv_text
+          object                  = 'VBBP'
+*         ARCHIVE_HANDLE          = 0
+*         LOCAL_CAT               = ' '
+*     IMPORTING
+*         HEADER                  =
+*         OLD_LINE_COUNTER        =
+        TABLES
+          lines                   = lt_lines
+        EXCEPTIONS
+          id                      = 1
+          language                = 2
+          name                    = 3
+          not_found               = 4
+          object                  = 5
+          reference_check         = 6
+          wrong_access_to_archive = 7
+          OTHERS                  = 8.
+*    IF sy-subrc <> 0.
+** Implement suitable error handling here
+*    ENDIF.
+      IF sy-subrc = 0.
+        LOOP AT lt_lines ASSIGNING FIELD-SYMBOL(<ls1_lines>).
+          CONCATENATE  lv_string <ls1_lines>-tdline  INTO lv_string .
+        ENDLOOP.
+        gs_item-tline = lv_string.
+
+      ENDIF.
+
+      CLEAR: lv_text.
+
+
+*      CLEAR lv_string.
+*      REFRESH lt_lines.
+*      CALL FUNCTION 'READ_TEXT'
+*        EXPORTING
+*          client                  = sy-mandt
+*          id                      = 'GRUN'
+*          language                = sy-langu
+*          name                    = lv_matnr
+*          object                  = 'MATERIAL'
+**         ARCHIVE_HANDLE          = 0
+**         LOCAL_CAT               = ' '
+**     IMPORTING
+**         HEADER                  =
+**         OLD_LINE_COUNTER        =
+*        TABLES
+*          lines                   = lt_lines
+*        EXCEPTIONS
+*          id                      = 1
+*          language                = 2
+*          name                    = 3
+*          not_found               = 4
+*          object                  = 5
+*          reference_check         = 6
+*          wrong_access_to_archive = 7
+*          OTHERS                  = 8.
+**    IF sy-subrc <> 0.
+*** Implement suitable error handling here
+**    ENDIF.
+*      IF sy-subrc = 0.
+*        LOOP AT lt_lines ASSIGNING FIELD-SYMBOL(<ls_lines>).
+*          CONCATENATE  lv_string <ls_lines>-tdline  INTO lv_string .
+*        ENDLOOP.
+*      ENDIF.
+*      gs_item-tline = lv_string.
+
+    ENDIF.
+
+*      ENDIF.
+
+    IF gs_item-tline IS INITIAL.
+
+      gs_item-tline = <lfs_vbrp>-arktx.
+
+    ENDIF.
+
+*      lv_vbeln_d = <lfs_vbrp>-vbeln_d.
+    lv_vbeln_d = <lfs_vbrp>-vbeln.
+*
+*       CLEAR lv_string.
+*    REFRESH lt_lines.
+*
+*
+*    CALL FUNCTION 'READ_TEXT'
+*      EXPORTING
+*        client                  = sy-mandt
+*        id                      = '0002'
+*        language                = sy-langu
+*        name                    = lv_vbeln_d
+*        object                  = 'VBBK'
+**       ARCHIVE_HANDLE          = 0
+**       LOCAL_CAT               = ' '
+**     IMPORTING
+**       HEADER                  =
+**       OLD_LINE_COUNTER        =
+*      TABLES
+*        lines                   = lt_lines
+*      EXCEPTIONS
+*        id                      = 1
+*        language                = 2
+*        name                    = 3
+*        not_found               = 4
+*        object                  = 5
+*        reference_check         = 6
+*        wrong_access_to_archive = 7
+*        OTHERS                  = 8.
+*
+*    IF sy-subrc = 0.
+*      LOOP AT lt_lines ASSIGNING FIELD-SYMBOL(<ls5_lines>).
+*        CONCATENATE  lv_string <ls5_lines>-tdline  INTO lv_string .
+*      ENDLOOP.
+*    ENDIF.
+
+
+
+    CLEAR lv_string.
+    REFRESH lt_lines.
+    CALL FUNCTION 'READ_TEXT'
+      EXPORTING
+        client                  = sy-mandt
+        id                      = '0002'
+        language                = sy-langu
+        name                    = lv_vbeln_d
+        object                  = 'VBBK'
+*       ARCHIVE_HANDLE          = 0
+*       LOCAL_CAT               = ' '
+*     IMPORTING
+*       HEADER                  =
+*       OLD_LINE_COUNTER        =
+      TABLES
+        lines                   = lt_lines
+      EXCEPTIONS
+        id                      = 1
+        language                = 2
+        name                    = 3
+        not_found               = 4
+        object                  = 5
+        reference_check         = 6
+        wrong_access_to_archive = 7
+        OTHERS                  = 8.
+
+    IF sy-subrc = 0.
+      LOOP AT lt_lines ASSIGNING FIELD-SYMBOL(<ls4_lines>).
+        CONCATENATE  lv_string <ls4_lines>-tdline  INTO lv_string .
+      ENDLOOP.
+    ENDIF.
+    gs_header-rex_con = lv_string.
+
+    AT END OF vbeln.
+
+      gs_header-brgew = gross.
+
+      SELECT SINGLE werks,name1,adrnr FROM t001w INTO @DATA(ls_t001w) WHERE werks = @<lfs_vbrp>-werks.
+
+      SELECT SINGLE vkbur,adrnr FROM tvbur INTO @DATA(ls1_t001w) WHERE vkbur = @<lfs_vbrp>-vkbur .
+
+      SELECT SINGLE addrnumber,name1,name2,name3,street,str_suppl1,str_suppl2,city1,post_code1,str_suppl3,location,tel_number,tel_extens,region,country FROM adrc INTO @DATA(ls1_addr) WHERE addrnumber = @ls_t001w-adrnr.
+
+      SELECT SINGLE addrnumber,name1,name2,name3,street,str_suppl1,str_suppl2,city1,post_code1,str_suppl3,location,tel_number,tel_extens,region,country FROM adrc INTO @DATA(ls_addr) WHERE addrnumber = @ls1_t001w-adrnr.
+
+      SELECT SINGLE addrnumber,tel_number,r3_user FROM adr2 INTO @DATA(ls_adr2) WHERE addrnumber = @ls1_t001w-adrnr AND r3_user = '3'.
+
+      SELECT SINGLE addrnumber,tel_number,tel_extens,r3_user FROM adr2 INTO @DATA(ls_adrr) WHERE addrnumber = @ls1_t001w-adrnr AND r3_user = '1'.
+
+      SELECT SINGLE addrnumber,uri_srch FROM adr12 INTO @DATA(ls_adr12) WHERE addrnumber = @ls1_t001w-adrnr .
+
+      SELECT SINGLE addrnumber,consnumber,remark,langu FROM adrt INTO @DATA(ls_adrt) WHERE addrnumber = @ls1_t001w-adrnr AND remark = 'Sales' AND langu = 'E'.
+
+      SELECT SINGLE addrnumber,smtp_addr FROM adr6 INTO @DATA(ls_mail) WHERE addrnumber = @ls_adrt-addrnumber AND consnumber = @ls_adrt-consnumber .
+
+      SELECT SINGLE bland,land1,spras,bezei  FROM t005u INTO @DATA(ls_t005u) WHERE bland = @ls_addr-region AND land1 =  @ls_addr-country AND spras = 'E'.
+
+      gs_header-werks = ls_t001w-werks.
+*        gs_header-plant_name = ls_t001w-name1.
+      CONCATENATE ls1_addr-name1 ' ' INTO gs_header-plant_name SEPARATED BY ' '.
+      CONCATENATE ls1_addr-name2 ls1_addr-name3 INTO gs_header-plant_name1 SEPARATED BY ' '.
+
+      IF gs_header-agent_name IS INITIAL.
+
+        gs_header-agent_name = gs_header-plant_name+0(7).
+
+      ENDIF.
+
+      gs_header-street6 = ls_addr-street.
+      gs_header-str_suppl9 = ls_addr-str_suppl1.
+      gs_header-str_suppl10 = ls_addr-str_suppl2.
+      gs_header-city6 = ls_addr-city1.
+      gs_header-post_code6 = ls_addr-post_code1.
+      gs_header-str_suppl11 = ls_addr-str_suppl3.
+      gs_header-location = ls_addr-location.
+      gs_header-smtp_addr6 = ls_mail-smtp_addr.
+      gs_header-tel_number = ls_adrr-tel_number.
+      gs_header-tel_extens = ls_adrr-tel_extens.
+      IF gs_header-tel_number IS INITIAL.
+        gs_header-tel_number = ls1_addr-tel_number.
+      ENDIF.
+      gs_header-tel_number2 = ls_adr2-tel_number.
+      TRANSLATE ls_adr12-uri_srch TO LOWER CASE.
+      gs_header-web = ls_adr12-uri_srch.
+      gs_header-regio1 = ls_addr-region.
+      gs_header-bezei55 = ls_t005u-bezei.
+
+      IF <lfs_vbrp>-vstel NE <lfs_vbrp>-werks.
+
+        gs_header-ad_chk = 'X'.
+
+
+        SELECT SINGLE vstel,adrnr FROM tvst INTO @DATA(ls_t001w1) WHERE vstel = @<lfs_vbrp>-vstel.
+
+
+        SELECT SINGLE addrnumber,street,str_suppl1,str_suppl2,city1,post_code1,str_suppl3,location,tel_number,tel_extens FROM adrc INTO @DATA(ls_addr1) WHERE addrnumber = @ls_t001w1-adrnr.
+
+        SELECT SINGLE addrnumber,tel_number,r3_user FROM adr2 INTO @DATA(ls_adr3) WHERE addrnumber = @ls_t001w1-adrnr AND r3_user = '3'.
+
+        SELECT SINGLE addrnumber,tel_number,tel_extens,r3_user FROM adr2 INTO @DATA(ls_adrr1) WHERE addrnumber = @ls_t001w1-adrnr AND r3_user = '1'.
+
+        SELECT SINGLE addrnumber,consnumber,remark,langu FROM adrt INTO @DATA(ls_adrt1) WHERE addrnumber = @ls_t001w1-adrnr AND remark = 'Sales' AND langu = 'E'.
+
+        SELECT SINGLE addrnumber,smtp_addr FROM adr6 INTO @DATA(ls_mail1) WHERE addrnumber = @ls_adrt1-addrnumber AND consnumber = @ls_adrt1-consnumber .
+
+
+        gs_header-street7 = ls_addr1-street.
+        gs_header-str_suppl12 = ls_addr1-str_suppl1.
+        gs_header-str_suppl13 = ls_addr1-str_suppl2.
+        gs_header-city7 = ls_addr1-city1.
+        gs_header-post_code7 = ls_addr1-post_code1.
+        gs_header-str_suppl14 = ls_addr1-str_suppl3.
+        gs_header-location1 = ls_addr1-location.
+        gs_header-smtp_addr7 = ls_mail1-smtp_addr.
+        gs_header-tel_number3 = ls_adrr1-tel_number.
+        gs_header-tel_extens1 = ls_adrr1-tel_extens.
+        gs_header-tel_number4 = ls_adr3-tel_number.
+
+      ENDIF.
+
+
+      gs_header-remark_d = lv_string.
+      gs_header-kunnr = ls_vbrk-kunrg.
+      gs_header-gstno1 = <lfs_vbrp>-taxnum.
+
+      IF gs_header-gstno1 IS  INITIAL.
+        gs_header-gstno1 = <lfs_vbrp>-taxnumxl.
+      ENDIF.
+    ENDAT.
+
+
+
+
+    APPEND gs_item TO gt_item.
+    CLEAR: gs_item.
+    CLEAR : pkg_wt,pkgs,pack_wt,pkgs.
+  ENDLOOP.
+  CLEAR: tot_wt,tot_pkgs,gross.
+ENDIF.
+
+IF lv_aubel IS NOT INITIAL.
+  SELECT   vk~inco1,
+           vk~vsart,
+           vk~bstkd,
+           vk~bstdk,
+           ti~bezei,
+           t1~bezei AS bezei1
+     FROM vbkd AS vk
+     LEFT OUTER JOIN tinct AS ti
+       ON ( vk~inco1 = ti~inco1 AND spras = @sy-langu )
+     LEFT OUTER JOIN t173t AS t1
+       ON ( vk~vsart = t1~vsart AND t1~spras = @sy-langu )
+    INTO TABLE @DATA(lt_vbkd)
+    WHERE vbeln = @<lfs_vbrp>-aubel.
+  LOOP AT lt_vbkd ASSIGNING FIELD-SYMBOL(<lfs_vbkd>).
+    AT FIRST.
+      gs_header-bstdk = <lfs_vbkd>-bstdk.
+      gs_header-bstkd = <lfs_vbkd>-bstkd.
+      gs_header-bezei4 = <lfs_vbkd>-bezei.
+*      ENDAT.
+      gs_header-mode1 = <lfs_vbkd>-bezei1.
+    ENDAT.
+  ENDLOOP.
+ENDIF.
+IF lt_vbrp[] IS NOT INITIAL.
+  SELECT knumv,
+         kposn,
+         kschl,
+         kbetr,
+         kwert,
+         kinak
+*           vb~knumv
+        FROM prcd_elements
+*          LEFT OUTER JOIN vbrk AS vb
+*          ON ( vp~knumv = vb~knumv )
+        INTO TABLE @DATA(lt_prcd_elements)
+        FOR ALL ENTRIES IN @lt_vbrp WHERE ( kposn = @lt_vbrp-posnr AND knumv = @lv_knumv ).
+  SORT lt_prcd_elements BY kposn.
+  SORT lt_vbrp BY vbeln posnr.
+  IF sy-subrc = 0.
+    DELETE lt_prcd_elements WHERE kinak IS NOT INITIAL.
+    LOOP AT lt_prcd_elements ASSIGNING FIELD-SYMBOL(<lfs_prcd_elements>).
+
+      IF con_wk IS INITIAL OR con_wk NE <lfs_prcd_elements>-kposn .
+
+        CLEAR: gs_item.
+
+        CLEAR: discount  ,
+         unit_price.
+      ENDIF.
+
+      READ TABLE lt_vbrp ASSIGNING FIELD-SYMBOL(<ls_vbrp>) WITH KEY posnr = <lfs_prcd_elements>-kposn.
+      IF sy-subrc = 0.
+
+        con_wk = <lfs_prcd_elements>-kposn.
+
+        CASE <lfs_prcd_elements>-kschl.
+
+          WHEN 'ZPRI' OR 'ZGRP' OR 'ZSER'.
+            gs_item-unit_price = <lfs_prcd_elements>-kbetr.
+            gs_item-t_discount = <ls_vbrp>-fkimg * gs_item-unit_price.
+            unit_price = unit_price + gs_item-t_discount.
+
+          WHEN 'ZDIS' .
+            gs_item-discount = gs_item-discount +  <lfs_prcd_elements>-kbetr .
+            discount   = discount + <lfs_prcd_elements>-kwert.
+*              gs_item-discount_amt = gs_item-discount_amt + <lfs_prcd_elements>-kwert.
+
+          WHEN 'ZDIP' .
+            gs_item-discount = gs_item-discount +  <lfs_prcd_elements>-kbetr .
+            discount   = discount + <lfs_prcd_elements>-kwert.
+
+
+
+          WHEN 'ZDI1' .
+            gs_item-discount = gs_item-discount + +  <lfs_prcd_elements>-kbetr .
+            discount   = discount + <lfs_prcd_elements>-kwert.
+*              gs_item-discount_amt = gs_item-discount_amt + <lfs_prcd_elements>-kwert.
+
+
+          WHEN 'ZDI2' .
+            gs_item-discount = gs_item-discount + +  <lfs_prcd_elements>-kbetr .
+            discount   = discount + <lfs_prcd_elements>-kwert.
+*              gs_item-discount_amt = gs_item-discount_amt + <lfs_prcd_elements>-kwert.
+
+
+
+          WHEN 'ZDI3' .
+            gs_item-discount = gs_item-discount +  +  <lfs_prcd_elements>-kbetr .
+            discount   = discount + <lfs_prcd_elements>-kwert.
+*              gs_item-discount_amt = gs_item-discount_amt + <lfs_prcd_elements>-kwert.
+
+
+*              gs_item-netwr = gs_item-t_discount - gs_item-discount.
+          WHEN 'ZPAC'.
+            gs_item-zpack_unit = <lfs_prcd_elements>-kwert / <ls_vbrp>-fkimg.
+            gs_item-zpack = <lfs_prcd_elements>-kwert.
+
+          WHEN 'ZPA1'.
+            gs_item-zpack_unit = <lfs_prcd_elements>-kwert / <ls_vbrp>-fkimg.
+            gs_item-zpack = <lfs_prcd_elements>-kwert.
+
+          WHEN 'ZFRE'.
+            gs_item-zfrgt = <lfs_prcd_elements>-kbetr.
+            gs_item-zfrgt_amt = <lfs_prcd_elements>-kwert.
+
+          WHEN 'DIFF'.
+
+            IF <lfs_prcd_elements>-kwert IS NOT INITIAL.
+
+              gs_header-diff = 'X'.
+
+            ENDIF.
+
+          WHEN 'ZDIF'.
+
+            IF <lfs_prcd_elements>-kwert IS NOT INITIAL.
+
+              gs_header-diff = 'X'.
+
+            ENDIF.
+
+
+          WHEN 'JOCG'.
+
+            gs_item-cgst = <lfs_prcd_elements>-kbetr.
+
+          WHEN 'MOCG'.
+
+            gs_item-cgst = <lfs_prcd_elements>-kbetr.
+*              gs_item-cgst_amt = <lfs_prcd_elements>-kwert.
+*              gs_item-cgst_amt = ( gs_item-netwr * gs_item-cgst ) / 100.
+
+*              if gs_item-cgst is NOT INITIAL.
+*
+*                tax_c = ( gs_item-zpack * gs_item-cgst ) / 100.
+*
+*                gs_item-cgst_amt = gs_item-cgst_amt - tax_c .
+*
+*                endif.
+
+          WHEN 'JOSG'.
+
+            gs_item-sgst = <lfs_prcd_elements>-kbetr.
+
+          WHEN 'MOSG'.
+
+            gs_item-sgst = <lfs_prcd_elements>-kbetr.
+*              gs_item-sgst_amt = <lfs_prcd_elements>-kwert.
+*              gs_item-sgst_amt = ( gs_item-netwr * gs_item-sgst ) / 100.
+
+*              if gs_item-sgst is NOT INITIAL.
+*                if gs_item-zpack is NOT INITIAL.
+*
+*                 tax_s = ( gs_item-zpack * gs_item-sgst ) / 100.
+*
+*                gs_item-sgst_amt = gs_item-sgst_amt - tax_s .
+*
+*                endif.
+*                endif.
+
+
+            .
+          WHEN 'JOIG'.
+
+            gs_item-igst = <lfs_prcd_elements>-kbetr.
+
+          WHEN 'MOIG'.
+
+            gs_item-igst = <lfs_prcd_elements>-kbetr.
+*              gs_item-igst_amt = <lfs_prcd_elements>-kwert.
+*              gs_item-igst_amt = ( gs_item-netwr * gs_item-igst ) / 100.
+
+
+*               if gs_item-igst is NOT INITIAL.
+*                 if gs_item-zpack is NOT INITIAL.
+*
+*
+*                 tax_i = ( gs_item-zpack * gs_item-igst ) / 100.
+*
+*                gs_item-igst_amt = gs_item-igst_amt - tax_i .
+*
+*                endif.
+*                endif.
+
+          WHEN 'TCS'.
+            gs_item-tcs_tax = <lfs_prcd_elements>-kbetr.
+            tcs_tax1  = <lfs_prcd_elements>-kbetr.          "Field added to avoid rounding off / 03/10/2021
+            gs_item-tcs = gs_item-tcs + <lfs_prcd_elements>-kwert.
+*              gs_item-tcs = <lfs_prcd_elements>-kwert / 100.
+            gs_item-tot_tcs = gs_item-tcs.
+
+          WHEN 'STCS'.
+            gs_item-tcs_tax = <lfs_prcd_elements>-kbetr.
+            tcs_tax1  = <lfs_prcd_elements>-kbetr.
+            gs_item-tcs = gs_item-tcs + <lfs_prcd_elements>-kwert.
+*              gs_item-tcs = <lfs_prcd_elements>-kwert / 100.
+            gs_item-tot_tcs = gs_item-tcs.
+
+        ENDCASE.
+
+*          IF gs_item-discount IS NOT INITIAL.
+*
+*            discount   = discount + gs_item-discount.
+*
+*          ENDIF.
+*          IF gs_item-unit_price IS NOT INITIAL.
+*            unit_price = unit_price + gs_item-unit_price.
+*          ENDIF.
+
+        IF discount IS NOT INITIAL AND unit_price IS NOT INITIAL.
+
+*            gs_item-discount = ( ( discount  * unit_price ) / 100 ) .
+          gs_item-discount =  ( unit_price + discount ).
+          gs_item-unit_price = gs_item-discount / <ls_vbrp>-fkimg.
+          gs_item-t_discount = gs_item-discount.
+
+        ENDIF.
+
+
+        gs_item-netwr = gs_item-t_discount + gs_item-discount_amt.
+
+        IF gs_item-cgst IS NOT INITIAL.
+          gs_item-cgst_amt = ( gs_item-netwr * gs_item-cgst ) / 100.
+        ENDIF.
+        IF gs_item-sgst IS NOT INITIAL.
+          gs_item-sgst_amt = ( gs_item-netwr * gs_item-sgst ) / 100.
+        ENDIF.
+        IF gs_item-igst IS NOT INITIAL.
+          gs_item-igst_amt = ( gs_item-netwr * gs_item-igst ) / 100.
+        ENDIF.
+
+        gs_item-l_total = gs_item-netwr + gs_item-cgst_amt + gs_item-sgst_amt + gs_item-igst_amt + gs_item-tcs .
+        MODIFY gt_item  FROM gs_item TRANSPORTING unit_price netwr t_discount l_total discount discount_amt cgst cgst_amt sgst sgst_amt igst igst_amt zpack_unit
+                                   zpack tcs tot_tcs tcs_tax zfrgt zfrgt_amt
+*                                     zpack_amt zpack_amt1 zpack_amt2
+                       WHERE posnr = <ls_vbrp>-posnr.
+*          clear gs_item.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+ENDIF.
+
+ht_item[] = gt_item[].
+
+SORT gt_item BY aubel aupos matnr.
+SORT ht_item BY aubel aupos matnr.
+
+DELETE ADJACENT DUPLICATES FROM ht_item COMPARING aubel aupos matnr.
+
+CLEAR:ks_item.
+
+LOOP AT ht_item INTO hs_item.
+
+  LOOP AT gt_item INTO gs_item WHERE aubel = hs_item-aubel AND aupos = hs_item-aupos AND matnr = hs_item-matnr.
+
+    ks_item-fkimg         = ks_item-fkimg     + gs_item-fkimg     .
+    ks_item-i_qty         = ks_item-i_qty     + gs_item-i_qty     .
+    ks_item-netwr         = ks_item-netwr     + gs_item-netwr     .
+    ks_item-l_total       = ks_item-l_total   + gs_item-l_total   .
+    ks_item-cgst_amt      = ks_item-cgst_amt  + gs_item-cgst_amt  .
+    ks_item-sgst_amt      = ks_item-sgst_amt  + gs_item-sgst_amt  .
+    ks_item-igst_amt      = ks_item-igst_amt  + gs_item-igst_amt  .
+    ks_item-zfrgt_amt      = ks_item-zfrgt_amt  + gs_item-zfrgt_amt  .
+*      ks_item-discount      = ks_item-discount  + gs_item-discount  .
+    ks_item-t_discount    = ks_item-t_discount  + gs_item-t_discount  .
+    ks_item-discount_amt   = ks_item-discount_amt  + gs_item-discount_amt  .
+    ks_item-zpack          = ks_item-zpack + gs_item-zpack.
+    ks_item-zpack_amt       = ks_item-zpack_amt  + gs_item-zpack_amt .
+    ks_item-zpack_amt1       = ks_item-zpack_amt1  + gs_item-zpack_amt1 .
+    ks_item-zpack_amt2       = ks_item-zpack_amt2  + gs_item-zpack_amt2 .
+    ks_item-tcs              = ks_item-tcs       + gs_item-tcs .
+    ks_item-tot_tcs          = ks_item-tot_tcs   + gs_item-tot_tcs  .
+
+    CLEAR:gs_item.
+  ENDLOOP.
+
+  MOVE-CORRESPONDING hs_item TO ms_item.
+
+
+  ms_item-fkimg        =  ks_item-fkimg       .
+  ms_item-i_qty        =  ks_item-i_qty       .
+  ms_item-netwr        =   ks_item-netwr       .
+  ms_item-l_total      =   ks_item-l_total     .
+  ms_item-cgst_amt     =   ks_item-cgst_amt    .
+  ms_item-sgst_amt     =   ks_item-sgst_amt    .
+  ms_item-igst_amt      =  ks_item-igst_amt    .
+  ms_item-zfrgt_amt      =  ks_item-zfrgt_amt    .
+*    ms_item-discount      =  ks_item-discount    .
+  ms_item-t_discount    =  ks_item-t_discount  .
+  ms_item-discount_amt  =  ks_item-discount_amt.
+  ms_item-zpack         =  ks_item-zpack       .
+  ms_item-zpack_amt     =  ks_item-zpack_amt   .
+  ms_item-zpack_amt1    =  ks_item-zpack_amt1  .
+  ms_item-zpack_amt2    =  ks_item-zpack_amt2  .
+  ms_item-tcs           =  ks_item-tcs   .
+  ms_item-tot_tcs       =  ks_item-tot_tcs   .
+
+  APPEND ms_item TO mt_item.
+
+  CLEAR:ms_item,ks_item.
+
+ENDLOOP.
+
+gt_item[] = mt_item[].
+
+
+
+
+*  SORT : gt_item ASCENDING BY aubel aupos. FREE : lt_item.
+*  LOOP AT gt_item INTO gs_item.
+*    DATA(lv_fin) = gs_item.
+*    AT NEW aubel.
+*    ENDAT.
+*    IF sy-subrc = 0.
+*      AT NEW aupos.
+*        MOVE-CORRESPONDING lv_fin TO lt_item.
+*        FREE : lt_item-fkimg      .
+*        FREE : lt_item-netwr      .
+*        FREE : lt_item-l_total    .
+*        FREE : lt_item-cgst_amt   .
+*        FREE : lt_item-sgst_amt   .
+*        FREE : lt_item-igst_amt   .
+*        FREE : lt_item-discount   .
+*        FREE : lt_item-t_discount .
+*        FREE : lt_item-zpack .
+*        FREE : lt_item-zpack_amt .
+*        FREE : lt_item-zpack_amt1 .
+*        FREE : lt_item-zpack_amt2 .
+*        FREE:  lt_item-discount_amt.
+*
+*      ENDAT.
+**    endat.
+*
+*      lt_item-fkimg      = lt_item-fkimg     + gs_item-fkimg     .
+*      lt_item-netwr      = lt_item-netwr     + gs_item-netwr     .
+*      lt_item-l_total    = lt_item-l_total   + gs_item-l_total   .
+*      lt_item-cgst_amt   = lt_item-cgst_amt  + gs_item-cgst_amt  .
+*      lt_item-sgst_amt   = lt_item-sgst_amt  + gs_item-sgst_amt  .
+*      lt_item-igst_amt   = lt_item-igst_amt  + gs_item-igst_amt  .
+*      lt_item-discount   = lt_item-discount  + gs_item-discount  .
+*      lt_item-t_discount   = lt_item-t_discount  + gs_item-t_discount  .
+*      lt_item-discount_amt   = lt_item-discount_amt  + gs_item-discount_amt  .
+*      lt_item-zpack        = lt_item-zpack + gs_item-zpack.
+*      lt_item-zpack_amt       = lt_item-zpack_amt  + gs_item-zpack_amt .
+*      lt_item-zpack_amt1       = lt_item-zpack_amt1  + gs_item-zpack_amt1 .
+*      lt_item-zpack_amt2       = lt_item-zpack_amt2  + gs_item-zpack_amt2 .
+*
+*      AT END OF aupos.
+*        APPEND lt_item.
+*        lt_item-sno = sy-tabix.
+*        MODIFY lt_item FROM lt_item INDEX sy-tabix TRANSPORTING sno.
+*        CLEAR : lt_item.
+*
+*      ENDAT.
+*    ENDIF.
+*
+*    CLEAR: gs_item.
+*
+*  ENDLOOP.
+*
+*  gt_item[] = lt_item[].
+
+*delete ADJACENT DUPLICATES FROM gt_item COMPARING matnr aubel aupos.
+
+*SORT : Gt_item ASCENDING BY aupos. FREE : lt_item.
+*kt_item[] = gt_item[].
+*Ht_item[] = gt_item[].
+*
+*FREE: GS_ITEM,KS_ITEM,HS_ITEM.
+*
+*DESCRIBE TABLE kt_ITEM LINES COUNT.
+*
+*  loop at gt_item into gs_item.
+*
+*    v_tabix = sy-tabix + 1.
+*
+*    IF v_tabix <= COUNT.
+*
+*    read table kt_item  into ks_item with key sno = v_tabix.
+*
+*    if ks_item-aubel = gs_item-aubel and ks_item-aupos = gs_item-aupos and  ks_item-matnr = gs_item-matnr.
+*
+**SORT : Gt_item ASCENDING BY aupos. FREE : lt_item.
+*
+*CLEAR GS_ITEM.
+**SORT : gt_item ASCENDING BY aupos. FREE : lt_item.
+*  LOOP AT gt_item INTO gs_item WHERE AUBEL = KS_ITEM-AUBEL.
+*    DATA(lv_fin) = gs_item.
+*
+**  SORT : gt_item ASCENDING BY aupos. FREE : lt_item.
+**
+**  LOOP AT gt_item INTO gs_item.
+**    DATA(lv_fin) = gs_item.
+**    At new aubel.
+**      ENDAT.
+**      if sy-subrc = 0.
+*    AT NEW aupos.
+*      MOVE-CORRESPONDING lv_fin TO lt_item.
+*      FREE : lt_item-fkimg      .
+*      FREE : lt_item-netwr      .
+*      FREE : lt_item-l_total    .
+*      FREE : lt_item-cgst_amt   .
+*      FREE : lt_item-sgst_amt   .
+*      FREE : lt_item-igst_amt   .
+*      FREE : lt_item-discount   .
+*      FREE : lt_item-t_discount .
+*      FREE : lt_item-ZPACK .
+*       FREE : lt_item-ZPACK_AMT .
+*        FREE : lt_item-ZPACK_AMT1 .
+*         FREE : lt_item-ZPACK_AMT2 .
+*
+*    ENDAT.
+**    endat.
+*
+*    lt_item-fkimg      = lt_item-fkimg     + gs_item-fkimg     .
+*    lt_item-netwr      = lt_item-netwr     + gs_item-netwr     .
+*    lt_item-l_total    = lt_item-l_total   + gs_item-l_total   .
+*    lt_item-cgst_amt   = lt_item-cgst_amt  + gs_item-cgst_amt  .
+*    lt_item-sgst_amt   = lt_item-sgst_amt  + gs_item-sgst_amt  .
+*    lt_item-igst_amt   = lt_item-igst_amt  + gs_item-igst_amt  .
+*    lt_item-discount   = lt_item-discount  + gs_item-discount  .
+*     lt_item-t_discount   = lt_item-t_discount  + gs_item-t_discount  .
+*    lt_item-ZPACK        = lt_item-ZPACK + gs_item-ZPACK.
+*    lt_item-ZPACK_AMT       = lt_item-ZPACK_AMT  + gs_item-ZPACK_AMT .
+*    lt_item-ZPACK_AMT1       = lt_item-ZPACK_AMT1  + gs_item-ZPACK_AMT1 .
+*   lt_item-ZPACK_AMT2       = lt_item-ZPACK_AMT2  + gs_item-ZPACK_AMT2 .
+*
+**    at end of aubel.
+*    AT END OF aupos.
+*      APPEND lt_item.
+*      lt_item-sno = sy-tabix.
+**      V_TABIX = V_TABIX - 1.
+**      MODIFY lt_item FROM lt_item INDEX sy-tabix TRANSPORTING sno.
+*      MODIFY lt_item FROM lt_item INDEX SY-TABIX TRANSPORTING sno.
+*      CLEAR : lt_item.
+*    ENDAT.
+*
+*
+**
+**    MODIFY HT_ITEM FROM LT_ITEM TRANSPORTING fkimg netwr l_total cgst_amt sgst_amt igst_amt discount ZPACK ZPACK_AMT ZPACK_AMT1  ZPACK_AMT2
+**                                           WHERE AUBEL = KS_ITEM-AUBEL.
+**
+*    CLEAR GS_ITEM.
+*
+*    ENDLOOP.
+*clear sno.
+*    LOOP AT LT_ITEM ASSIGNING FIELD-SYMBOL(<LFS_LTT>).
+*      sno = sno + 1.
+*      <LFS_LTT>-sno = sno.
+*
+*    MODIFY HT_ITEM FROM <LFS_LTT> TRANSPORTING sno fkimg netwr l_total cgst_amt sgst_amt igst_amt discount t_discount ZPACK ZPACK_AMT ZPACK_AMT1  ZPACK_AMT2
+*                                           WHERE AUBEL = <LFS_LTT>-AUBEL and aupos = <LFS_LTT>-aupos.
+*ENDLOOP.
+*CLEAR <LFS_LTT>.
+**    endif.
+**    endat.
+*      endif.
+*      delete ADJACENT DUPLICATES FROM Ht_item COMPARING matnr aubel aupos.
+*  ENDIF.
+*  ENDLOOP.
+*  FREE GT_ITEM.
+*  GT_ITEM[] = HT_ITEM[].
+
+*  endif.
+*  endif.
+*  ENDIF.
+
+
+IF gs_header-kunnr IS NOT INITIAL.
+  SELECT SINGLE k1~kunnr,
+                k1~name3,
+                k1~regio,
+                k1~adrnr,
+                ac~name1,
+                ac~name2,
+                ac~tel_number,
+                a6~smtp_addr,
+                t5~bezei
+        FROM kna1 AS k1
+        LEFT OUTER JOIN adrc AS ac
+        ON ( k1~adrnr = ac~addrnumber )
+        LEFT OUTER JOIN adr6 AS a6
+        ON ( k1~adrnr = a6~addrnumber )
+        LEFT OUTER JOIN t005u AS t5
+       ON ( k1~regio = t5~bland AND k1~land1 = t5~land1 AND t5~spras = 'E' )
+        INTO @DATA(ls_kna1)
+        WHERE kunnr = @gs_header-kunnr.
+*      ( gs_header-nickname, gs_header-telf1 )
+  IF sy-subrc = 0.
+
+*      C gs_header-nickname.
+    gs_header-nickname = ls_kna1-name3.
+
+    gs_header-telf1 = ls_kna1-tel_number.
+    gs_header-smtp_addr = ls_kna1-smtp_addr.
+    gs_header-regio = ls_kna1-regio.
+    gs_header-bezei5 = ls_kna1-bezei.
+  ENDIF.
+
+
+  SELECT SINGLE kb~kunnr,
+                kb~bukrs,
+                kb~hbkid,
+                t1~bankl,
+                bk~banka,
+    bk~stras,
+    bk~swift,
+    bk~brnch,
+    bk~bnklz
+        FROM knb1 AS kb
+        LEFT OUTER JOIN t012 AS t1
+        ON ( kb~hbkid = t1~hbkid AND t1~bukrs = @gs_header-bukrs )
+        LEFT OUTER JOIN bnka AS bk
+        ON ( t1~bankl  = bk~bankl )
+        INTO @DATA(ls_knb1)
+        WHERE kb~kunnr = @gs_header-kunnr AND kb~bukrs = @gs_header-bukrs .
+
+  gs_header-banka = ls_knb1-banka.
+  gs_header-swift = ls_knb1-swift.
+  gs_header-brnch = ls_knb1-brnch.
+  gs_header-bnklz = ls_knb1-bnklz.
+  CLEAR: ls_knb1.
+ENDIF.
+IF ls_vbrk IS NOT INITIAL .
+  SELECT bukrs,
+         party,
+         paval
+         FROM t001z
+         INTO TABLE @DATA(lt_t001z) WHERE bukrs = @ls_vbrk-bukrs.
+  IF sy-subrc = 0.
+    LOOP AT lt_t001z ASSIGNING FIELD-SYMBOL(<lfs_t001z>).
+      CASE <lfs_t001z>-party.
+        WHEN 'J_1I02'.
+          gs_header-gstno = <lfs_t001z>-paval.
+        WHEN 'J_1I03'.
+          gs_header-panno = <lfs_t001z>-paval.
+      ENDCASE.
+    ENDLOOP.
+  ENDIF.
+ENDIF.
+
+SELECT SINGLE signedqrcode FROM zinv_result INTO @gs_header-signedqrcode5 WHERE vbeln = @gs_header-vbeln.
+
+PERFORM split_qr_code USING gs_header-signedqrcode5.
+
+CLEAR:ls_vbrk,lt_vbrp.
+*&---------------------------------------------------------------------*
+*& Form SPLIT_QR_CODE
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*&      --> GS_HEADER_SIGNEDQRCODE5
+*&---------------------------------------------------------------------*
+FORM split_qr_code  USING     signed_qrcode TYPE zinv_result-signedqrcode.
+
+  DATA: qr_code1          TYPE string,
+        qr_code2          TYPE string,
+        qr_code3          TYPE string,
+        qr_code4          TYPE string,
+        qr_code5          TYPE string,
+        lv_iteration      TYPE i,
+        lv_count          TYPE i,
+        lv_remainder_char TYPE i.
+
+
+
+
+  lv_count = strlen( signed_qrcode ).
+  CHECK lv_count > 0.
+  lv_iteration = lv_count DIV 255.
+  lv_iteration = lv_iteration + 1.
+  lv_remainder_char = lv_count MOD 255.
+  DO lv_iteration TIMES.
+    CASE sy-index.
+      WHEN 1.
+        IF lv_iteration EQ 1.
+          qr_code1 = signed_qrcode+0(lv_remainder_char).
+        ELSE.
+          qr_code1 =  signed_qrcode+0(255).
+        ENDIF.
+      WHEN 2.
+        IF lv_iteration EQ 2.
+          qr_code2 =  signed_qrcode+255(lv_remainder_char).
+        ELSE.
+          qr_code2 =  signed_qrcode+255(255).
+        ENDIF.
+      WHEN 3.
+        IF lv_iteration EQ 3.
+          qr_code3 =  signed_qrcode+510(lv_remainder_char).
+        ELSE.
+          qr_code3 =  signed_qrcode+510(255).
+        ENDIF.
+      WHEN 4.
+        IF lv_iteration EQ 4.
+          qr_code4 =  signed_qrcode+765(lv_remainder_char).
+          qr_code4 =  signed_qrcode+765(255).
+        ENDIF.
+      WHEN 4.
+        IF lv_iteration EQ 4.
+          qr_code5 =  signed_qrcode+1020(lv_remainder_char).
+        ENDIF.
+    ENDCASE.
+  ENDDO.
+  CHECK qr_code1 IS NOT INITIAL.
+  gs_header-signedqrcode = qr_code1.
+  CONDENSE gs_header-signedqrcode.
+
+  CHECK qr_code2 IS NOT INITIAL.
+  gs_header-signedqrcode1 = qr_code2.
+  CONDENSE gs_header-signedqrcode1.
+
+  CHECK qr_code3 IS NOT INITIAL.
+  gs_header-signedqrcode2 = qr_code3.
+  CONDENSE gs_header-signedqrcode2.
+
+  CHECK qr_code4 IS NOT INITIAL.
+  gs_header-signedqrcode3 = qr_code4.
+  CONDENSE gs_header-signedqrcode3.
+
+  CHECK qr_code5 IS NOT INITIAL.
+  gs_header-signedqrcode4 = qr_code5.
+  CONDENSE gs_header-signedqrcode4.
+
+
+ENDFORM.
