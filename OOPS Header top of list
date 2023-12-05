@@ -1,0 +1,91 @@
+
+DATA: go_alv        TYPE REF TO cl_salv_table             ,
+       lr_columns    TYPE REF TO cl_salv_columns_table     ,
+       lr_column     TYPE REF TO cl_salv_column_table      ,
+       lr_functions  TYPE REF TO cl_salv_functions_list    ,
+       gr_display    TYPE REF TO cl_salv_display_settings  ,
+       gr_selections TYPE REF TO cl_salv_selections        ,
+       lo_header     TYPE REF TO cl_salv_form_layout_grid  ,
+       lo_h_label    TYPE REF TO cl_salv_form_label        ,
+       lo_h_flow     TYPE REF TO cl_salv_form_layout_flow  .
+
+*   Data Selection
+  SELECT  a~carrid,
+          a~connid AS teste1,
+          a~fldate AS teste2
+    FROM sflight as a
+    INNER JOIN sbook as b ON ( a~carrid = b~carrid AND
+                               a~connid = b~connid AND
+                               a~fldate = b~fldate
+                              )
+    INTO TABLE @DATA(it_carrid)
+    WHERE a~carrid EQ 'AA'
+      AND a~connid EQ 17
+      AND a~fldate EQ '20100901'.
+
+  SORT it_carrid BY carrid.
+
+*  Get total lines
+  DESCRIBE TABLE it_carrid LINES DATA(v_total_lines).
+
+
+*   ALV Class
+  TRY.
+    cl_salv_table=>factory(
+      IMPORTING
+        r_salv_table = go_alv
+      CHANGING
+        t_table      = it_carrid[] ). "Internal Table
+
+  CATCH cx_salv_msg.
+  ENDTRY.
+
+*  *Enable function buttons
+  lr_functions = go_alv->get_functions( ).
+  lr_functions->set_all( 'X' ).
+
+*  *Optimize Column
+  lr_columns = go_alv->get_columns( ).
+  lr_columns->set_optimize( 'X' ).
+
+*  *Enable Zebra style
+  gr_display = go_alv->get_display_settings( ).
+  gr_display->set_striped_pattern( cl_salv_display_settings=>false ).
+  gr_display->set_list_header( 'Log Execution' ).
+
+"------ SET TOP-OF-PAGE (HEADER) -------
+
+*   header object
+    CREATE OBJECT lo_header.
+
+*   Writing Bold phrase
+    lo_h_label = lo_header->create_label( row = 1 column = 1 ).
+    lo_h_label->set_text( 'Example - Header in Bold' ).
+
+*   Writing Header texts
+    lo_h_flow = lo_header->create_flow( row = 2  column = 1 ).
+    lo_h_flow->create_text( text = 'Example - Total records: ' ).
+    lo_h_flow = lo_header->create_flow( row = 2  column = 2 ).
+    lo_h_flow->create_text( text = v_total_lines ).
+
+    lo_h_flow = lo_header->create_flow( row = 3  column = 1 ).
+    lo_h_flow->create_text( text = 'Example - Successes: ' ).
+    lo_h_flow = lo_header->create_flow( row = 3  column = 2 ).
+    lo_h_flow->create_text( text = 'Any value' ).
+
+    lo_h_flow = lo_header->create_flow( row = 4  column = 1 ).
+    lo_h_flow->create_text( text = 'Example - Errors: ' ).
+    lo_h_flow = lo_header->create_flow( row = 4  column = 2 ).
+    lo_h_flow->create_text( text = 'Any value'  ).
+
+*   Set the top of list
+    go_alv->set_top_of_list( lo_header ).
+
+*   Print on top of list
+    go_alv->set_top_of_list_print( lo_header ).
+
+"------ SHOW ALV --------------
+
+*  *Display ALV
+  go_alv->display( ).
+
