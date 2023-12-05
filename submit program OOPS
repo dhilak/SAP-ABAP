@@ -1,0 +1,127 @@
+
+  DATA: gt_final_s TYPE STANDARD TABLE OF zgst_miro_si.
+  DATA: tt_final_s TYPE STANDARD TABLE OF zgst_miro_si.
+  DATA: lv_begdate TYPE sy-datum.
+  DATA: lv_enddate TYPE sy-datum.
+  DATA: lv_dodate  TYPE sy-datum.
+
+  CALL METHOD me->get_userdetails
+    EXPORTING
+      server   = server               " HTTP Framework (iHTTP) HTTP Server
+    IMPORTING
+      month    = DATA(lv_month)               " Component of the Version Number
+      year     = DATA(lv_year)               " Undefined range (can be used for patch levels)
+      fromdate = DATA(lv_fdate)
+      todate   = DATA(lv_tdate).
+
+  DATA : awkey TYPE bseg-awkey .
+
+  DATA:    tax_tab  TYPE TABLE OF rtax1u15.
+
+  IF lv_fdate IS INITIAL AND lv_tdate IS INITIAL .
+
+    IF lv_month GT 12 OR lv_month IS INITIAL.
+      MESSAGE 'Error' TYPE 'S' DISPLAY LIKE 'E'.
+      EXIT.
+    ENDIF.
+
+    IF lv_year IS INITIAL OR lv_year = ' '.
+      MESSAGE 'Error' TYPE 'S' DISPLAY LIKE 'E'.
+      EXIT.
+    ENDIF.
+
+    CONDENSE lv_month.
+    IF strlen( lv_month ) = 1.
+      CONCATENATE '0' lv_month INTO lv_month.
+    ENDIF.
+
+    CONCATENATE lv_year lv_month '01' INTO lv_begdate.
+    CALL FUNCTION 'RP_LAST_DAY_OF_MONTHS'
+      EXPORTING
+        day_in            = lv_begdate
+      IMPORTING
+        last_day_of_month = lv_enddate
+      EXCEPTIONS
+        day_in_no_date    = 1
+        OTHERS            = 2.
+
+  ELSE.
+    lv_begdate = lv_fdate .
+    lv_enddate = lv_tdate .
+
+
+
+
+
+  ENDIF .
+
+  DATA: s_budat TYPE RANGE OF sy-datum.
+
+*  DO 3 TIMES.
+*    CLEAR: s_budat[].
+*    lv_dodate = lv_enddate.
+*
+*    IF sy-index EQ 1.
+*      lv_dodate+6(2) = '10'.
+*      APPEND VALUE #( sign = 'I' option = 'BT' low = lv_begdate high = lv_dodate ) TO s_budat.
+*
+*    ELSEIF sy-index EQ 2.
+*      lv_dodate+6(2)  = '20'.
+*      lv_begdate+6(2) = '11'.
+*
+*      APPEND VALUE #( sign = 'I' option = 'BT' low = lv_begdate high = lv_dodate ) TO s_budat.
+*    ELSE.
+*      lv_begdate+6(2) = '21'.
+      APPEND VALUE #( sign = 'I' option = 'BT' low = lv_begdate high = lv_enddate ) TO s_budat.
+*    ENDIF.
+
+    FIELD-SYMBOLS <lt_data> TYPE ANY TABLE.
+    DATA lr_data TYPE REF TO data.
+    DATA lr_data_descr TYPE REF TO cl_abap_datadescr.
+
+    cl_salv_bs_runtime_info=>set(
+    EXPORTING
+    display = abap_false
+    metadata = abap_false
+    data = abap_true ).
+
+    SUBMIT zmm_gst
+      WITH s_budat         IN s_budat[]
+
+      WITH p_all     EQ ' '
+      WITH p_bupla   EQ ' '
+      WITH p_hsn     EQ ' '
+      WITH p_credit  EQ ' '
+      WITH p_all_s   EQ ' '
+      WITH p_all_si  EQ 'X'
+      AND RETURN.
+
+    TRY.
+        cl_salv_bs_runtime_info=>get_data_ref(
+        IMPORTING
+            r_data_descr = lr_data_descr ).
+
+        TRY.
+            CREATE DATA lr_data TYPE HANDLE lr_data_descr.
+            ASSIGN lr_data->* TO <lt_data>.
+
+          CATCH cx_sy_ref_is_initial.
+            EXIT.
+        ENDTRY.
+
+        cl_salv_bs_runtime_info=>get_data(
+        IMPORTING
+            t_data = <lt_data> ).
+
+        MOVE-CORRESPONDING <lt_data> TO tt_final_s[].
+        IF tt_final_s[] IS NOT INITIAL.
+          APPEND LINES OF tt_final_s[] TO gt_final_s[].
+        ENDIF.
+        CLEAR: tt_final_s[].
+
+      CATCH cx_salv_bs_sc_runtime_info.
+        EXIT.
+    ENDTRY.
+
+    cl_salv_bs_runtime_info=>clear_all( ).
+*  ENDDO.
