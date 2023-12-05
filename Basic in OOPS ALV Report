@@ -1,0 +1,85 @@
+*&---------------------------------------------------------------------*
+*& Report ZTEST
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT ztest.
+
+
+*data :ls_edit  TYPE REF TO if_salv_gui_om_edit_restricted.
+
+SELECT * FROM vbak INTO TABLE @DATA(gt_data) UP TO 100 ROWS .
+
+
+* Normal class method for ALV Display
+
+cl_salv_table=>factory(
+EXPORTING
+  list_display  = abap_false
+  IMPORTING
+    r_salv_table   =   DATA(lo_alv)                        " Basis Class Simple ALV Tables
+  CHANGING
+    t_table        = gt_data
+).
+
+
+* to set column name at Different lenght
+
+DATA(lo_column) = lo_alv->get_columns( )->get_column( 'VBELN' ).
+lo_column->set_long_text( 'LONG_HEADER' ).
+lo_column->set_medium_text( 'MEDIUM_HEADER' ).
+lo_column->set_short_text( 'SHORT' ).
+*lo_column->set_edit_mask( value = '1'  ).
+
+
+* to Optimize Column width it will adjust
+
+lo_alv->get_columns( )->set_optimize( abap_true ).
+
+* to sort by column name
+
+lo_alv->get_sorts( )->add_sort( 'WAERK' ).
+*lo_alv->get_sorts( )->add_sort( 'NETWR' ).
+
+
+* hotspot click factor
+*DATA(lo_column_tab) = CAST cl_salv_column_table(
+*  lo_alv->get_columns( )->get_column( 'NETWR' ) ).
+*lo_column_tab->set_cell_type( if_salv_c_cell_type=>hotspot ).
+
+* Show total, average
+DATA(lo_aggregations) = lo_alv->get_aggregations( ).
+lo_aggregations->add_aggregation(
+  columnname  = 'NETWR'
+  aggregation = if_salv_c_aggregation=>average ).
+
+* Set Select for rows
+
+DATA(lo_selections) = lo_alv->get_selections( ).
+"allow single line selection
+lo_selections->set_selection_mode( if_salv_c_selection_mode=>multiple ).
+
+
+* to Display ALV
+
+lo_alv->display( ).
+
+*get selected rows
+*DATA(lo_selections) = lo_alv->get_selections( ).
+DATA(lt_selected_row_indices) = lo_selections->get_selected_rows( ).
+
+IF lines( lt_selected_row_indices ) NE 1.
+  "Select one row for this function
+  MESSAGE s022(upp_pp_k) DISPLAY LIKE 'W'.
+  RETURN.
+ENDIF.
+
+READ TABLE lt_selected_row_indices INDEX 1 INTO DATA(lv_selected_row_index).
+READ TABLE gt_data
+  INDEX lv_selected_row_index
+  ASSIGNING FIELD-SYMBOL(<s_selected_row>).
+IF sy-subrc NE 0.
+  "Select one row for this function
+  MESSAGE s022(upp_pp_k) DISPLAY LIKE 'W'.
+  RETURN.
+ENDIF.
