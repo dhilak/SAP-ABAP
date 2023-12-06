@@ -1,0 +1,179 @@
+*&---------------------------------------------------------------------*
+*& Report  ZTEST
+*&
+*&---------------------------------------------------------------------*
+*&
+*&
+*&---------------------------------------------------------------------*
+REPORT ztest.
+
+****interface definition****
+*
+*INTERFACE zif_demo.
+*
+*METHODs display.
+*
+*ENDINTERFACE.
+*
+*****class definition ****
+*
+*CLASS zcl_demo DEFINITION.
+*
+*PUBLIC SECTION.
+*
+*INTERFACES zif_demo.
+*
+*ENDCLASS.
+*
+*CLASS zcl_demo1 DEFINITION.
+*
+*PUBLIC SECTION.
+*
+*INTERFACES zif_demo.
+*
+*ENDCLASS.
+*
+*
+*
+*****class implementation****
+*
+*CLASS zcl_demo IMPLEMENTATION.
+*
+*METHOD zif_demo~display.                                                              ""“Interface Method implementation
+*
+*WRITE : 'This is the interface method in class 1..' .
+*
+*ENDMETHOD.
+*
+*ENDCLASS.
+*
+*CLASS zcl_demo1 IMPLEMENTATION.
+*
+*METHOD zif_demo~display.                                                             "" “Interface Method implementation
+*
+*WRITE : 'This is the interface method in class 2..' .
+*
+*ENDMETHOD.
+*
+*ENDCLASS.
+*
+*
+*
+*****creating class object****
+*
+*START-OF-SELECTION .
+*
+*DATA : object_demo TYPE REF TO zcl_demo.
+*
+*CREATE OBJECT object_demo.
+*
+*CALL METHOD  object_demo->zif_demo~display.
+*
+*
+*
+*DATA : object_demo1 TYPE REF TO zcl_demo1.
+*
+*CREATE OBJECT object_demo1.
+*
+*CALL METHOD object_demo1->zif_demo~display.
+
+
+CLASS zalv_report DEFINITION .
+
+  PUBLIC SECTION .
+
+    TYPES : BEGIN OF ty_stru,
+              vbeln  TYPE vbeln ,
+              posnr  TYPE posnr,
+              matnr  TYPE matnr,
+              maktx  TYPE maktx,
+              kwmeng TYPE kwmeng,
+            END OF ty_stru,
+            gt_head TYPE STANDARD TABLE OF ty_stru WITH DEFAULT KEY WITH NON-UNIQUE SORTED KEY key_com COMPONENTS vbeln    ,
+
+            gt_it TYPE STANDARD TABLE OF ty_stru ."" WITH NON-UNIQUE SORTED KEY key_com COMPONENTS vbeln   .
+
+                   CLASS-METHODS: getdata EXPORTING lv_final TYPE gt_head ,
+                   display IMPORTING lv_display TYPE gt_head .
+
+ENDCLASS.
+
+CLASS zalv_report IMPLEMENTATION .
+
+
+  METHOD getdata .
+
+
+
+    SELECT * FROM vbak INTO TABLE @DATA(gt_data) UP TO 30 ROWS.
+
+    SELECT * FROM vbap INTO TABLE @DATA(gt_item) UP TO 500 ROWS.
+    SELECT * FROM makt INTO TABLE @DATA(gt_makt) WHERE spras = 'E' ."" UP TO 100 ROWS.
+
+
+
+    DATA(t_final) = VALUE gt_head( FOR gs_data IN gt_data
+    FOR gs_item IN gt_item WHERE ( vbeln  = gs_data-vbeln  )
+    FOR gs_makt IN gt_makt WHERE ( matnr  = gs_item-matnr  )
+                                 ( vbeln  = gs_data-vbeln
+                                   posnr  = gs_item-posnr
+                                   matnr  = gs_item-matnr
+                                   maktx  = gs_makt-maktx
+                                   kwmeng = gs_item-kwmeng  ) ) .
+
+    data(tt_fin) = VALUE gt_head( for gs_data in gt_data
+     for gt_fin in t_final where ( vbeln  = gs_data-vbeln )
+                                 ( vbeln  = gs_data-vbeln
+                                   posnr  = gt_fin-posnr
+                                   matnr  = gt_fin-matnr
+                                   maktx  = gt_fin-maktx
+                                   kwmeng = REDUCE kwmeng( init lv_qty type kwmeng for ls_qty in FILTER #( t_final USING KEY key_com  where vbeln = gs_data-vbeln ) NEXT lv_qty = lv_qty + ls_qty-kwmeng )  )  ) .
+
+
+
+
+    lv_final[]  = tt_fin[].
+
+
+  ENDMETHOD.
+
+
+  METHOD display .
+
+    cl_demo_output=>display(
+  EXPORTING
+    data =   lv_display  " Text or Data
+*        name =
+).
+
+  ENDMETHOD .
+
+ENDCLASS.
+
+
+START-OF-SELECTION .
+
+
+
+  DATA : lo_obj TYPE REF TO zalv_report .
+*
+*  CREATE OBJECT lo_obj .
+
+  lo_obj = new #( ).
+*
+  CALL METHOD lo_obj->getdata
+    IMPORTING
+      lv_final = DATA(gt_final).
+
+
+
+  CALL METHOD lo_obj->display
+    EXPORTING
+      lv_display = gt_final.
+
+*zalv_report=>getdata(
+*  IMPORTING
+*    lv_final = data(gt_final)
+*).
+*
+*zalv_report=>display( lv_display = gt_final ) .
