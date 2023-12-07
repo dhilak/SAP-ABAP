@@ -1,0 +1,299 @@
+*&---------------------------------------------------------------------*
+*& Report  ZTEST
+*&
+*&---------------------------------------------------------------------*
+*&
+*&
+*&---------------------------------------------------------------------*
+REPORT ztest.
+
+****interface definition****
+*
+*INTERFACE zif_demo.
+*
+*METHODs display.
+*
+*ENDINTERFACE.
+*
+*****class definition ****
+*
+*CLASS zcl_demo DEFINITION.
+*
+*PUBLIC SECTION.
+*
+*INTERFACES zif_demo.
+*
+*ENDCLASS.
+*
+*CLASS zcl_demo1 DEFINITION.
+*
+*PUBLIC SECTION.
+*
+*INTERFACES zif_demo.
+*
+*ENDCLASS.
+*
+*
+*
+*****class implementation****
+*
+*CLASS zcl_demo IMPLEMENTATION.
+*
+*METHOD zif_demo~display.                                                              ""“Interface Method implementation
+*
+*WRITE : 'This is the interface method in class 1..' .
+*
+*ENDMETHOD.
+*
+*ENDCLASS.
+*
+*CLASS zcl_demo1 IMPLEMENTATION.
+*
+*METHOD zif_demo~display.                                                             "" “Interface Method implementation
+*
+*WRITE : 'This is the interface method in class 2..' .
+*
+*ENDMETHOD.
+*
+*ENDCLASS.
+*
+*
+*
+*****creating class object****
+*
+*START-OF-SELECTION .
+*
+*DATA : object_demo TYPE REF TO zcl_demo.
+*
+*CREATE OBJECT object_demo.
+*
+*CALL METHOD  object_demo->zif_demo~display.
+*
+*
+*
+*DATA : object_demo1 TYPE REF TO zcl_demo1.
+*
+*CREATE OBJECT object_demo1.
+*
+*CALL METHOD object_demo1->zif_demo~display.
+
+*CLASS cl_application DEFINITION.
+*
+**  PUBLIC SECTION .
+**    METHODS : on_link_click
+**          FOR EVENT link_click OF cl_salv_events_table
+**      IMPORTING
+**          row
+**          column.
+*
+*ENDCLASS.
+
+
+
+
+CLASS zalv_report DEFINITION .
+
+  PUBLIC SECTION .
+
+    TYPES : BEGIN OF ty_stru,
+              vbeln  TYPE vbeln,
+*              posnr  TYPE posnr,
+              matnr  TYPE matnr,
+              maktx  TYPE maktx,
+              kwmeng TYPE kwmeng,
+            END OF ty_stru,
+            gt_head TYPE STANDARD TABLE OF ty_stru WITH DEFAULT KEY WITH NON-UNIQUE SORTED KEY key_com COMPONENTS vbeln,
+
+            gt_it   TYPE STANDARD TABLE OF ty_stru . "" WITH NON-UNIQUE SORTED KEY key_com COMPONENTS vbeln   .
+    DATA : gt_pop TYPE TABLE OF gt_head .
+
+    METHODS: getdata EXPORTING gt_pop TYPE gt_head ,
+      display CHANGING lv_display TYPE gt_head .
+
+
+
+
+ENDCLASS.
+
+CLASS zcl_application DEFINITION INHERITING FROM  zalv_report .
+  PUBLIC SECTION.
+    METHODS : on_link_click
+          FOR EVENT link_click OF cl_salv_events_table
+      IMPORTING
+          row
+          column sender
+      .
+
+ENDCLASS .
+
+
+
+CLASS zalv_report IMPLEMENTATION .
+
+
+  METHOD getdata .
+
+
+
+    SELECT * FROM vbak INTO TABLE @DATA(gt_data) UP TO 30 ROWS.
+
+    SELECT * FROM vbap INTO TABLE @DATA(gt_item) UP TO 500 ROWS.
+    SELECT * FROM makt INTO TABLE @DATA(gt_makt) WHERE spras = 'E' ."" UP TO 100 ROWS.
+
+
+
+    DATA(t_final) = VALUE gt_head( FOR gs_data IN gt_data
+    FOR gs_item IN gt_item WHERE ( vbeln  = gs_data-vbeln  )
+    FOR gs_makt IN gt_makt WHERE ( matnr  = gs_item-matnr  )
+                                 ( vbeln  = gs_data-vbeln
+*                                   posnr  = gs_item-posnr
+                                   matnr  = gs_item-matnr
+                                   maktx  = gs_makt-maktx
+                                   kwmeng = gs_item-kwmeng  ) ) .
+
+   gt_pop = VALUE gt_head( FOR gs_data IN gt_data
+     FOR gt_fin IN t_final WHERE ( vbeln  = gs_data-vbeln )
+                                 ( vbeln  = gs_data-vbeln
+*                                   posnr  = gt_fin-posnr
+                                   matnr  = gt_fin-matnr
+                                   maktx  = gt_fin-maktx
+                                   kwmeng = REDUCE kwmeng( INIT lv_qty TYPE kwmeng FOR ls_qty IN FILTER #( t_final USING KEY key_com  WHERE vbeln = gs_data-vbeln ) NEXT lv_qty = lv_qty + ls_qty-kwmeng )  )  ) .
+
+
+
+
+*    me->gt_pop  = tt_fin[].
+*    gt_pop[]  = tt_fin[].
+
+
+  ENDMETHOD.
+
+
+  METHOD display .
+
+
+
+
+    cl_salv_table=>factory(
+      EXPORTING
+        list_display   = if_salv_c_bool_sap=>false    " ALV Displayed in List Mode
+*        r_container    =   cl_gui_container=>screen0  " Abstract Container for GUI Controls
+*        container_name =
+      IMPORTING
+        r_salv_table   =   DATA(lo_alv)   " Basis Class Simple ALV Tables
+      CHANGING
+        t_table        = lv_display
+    ).
+*      CATCH cx_salv_msg.    "
+
+
+    DATA(lo_column) = lo_alv->get_columns( )->get_column( columnname = 'KWMENG' ) .
+    lo_column->set_short_text( value = 'Total Qty'  ).
+    lo_column->set_medium_text( value = 'Total Qty'  ).
+    lo_column->set_long_text( value = 'Total Qty'  ).
+
+    lo_column = lo_alv->get_columns( )->get_column( columnname = 'VBELN' ) .
+    lo_column->set_short_text( value = 'SD Doc'  ).
+    lo_column->set_medium_text( value = 'Sales Document'  ).
+    lo_column->set_long_text( value = 'Sales Document'  ).
+
+    lo_column = lo_alv->get_columns( )->get_column( columnname = 'MATNR' ) .
+    lo_column->set_short_text( value = 'Mat Name'  ).
+    lo_column->set_medium_text( value = 'Material Name'  ).
+    lo_column->set_long_text( value = 'Material Name'  ).
+
+    lo_alv->get_columns( )->set_optimize(
+        value = abap_true
+    ).
+
+    DATA(lo_selections) = lo_alv->get_selections( ).
+    "allow single line selection
+    lo_selections->set_selection_mode( if_salv_c_selection_mode=>cell ).
+
+
+
+* hotspot click factor
+    DATA(lo_column_tab) = CAST cl_salv_column_table(
+      lo_alv->get_columns( )->get_column( 'KWMENG' ) ).
+    lo_column_tab->set_cell_type( if_salv_c_cell_type=>hotspot ).
+
+
+
+    DATA(lo_events) = lo_alv->get_event( ).
+    DATA : lo_obj TYPE REF TO zcl_application .
+    lo_obj = NEW #( ) .
+
+    SET HANDLER lo_obj->on_link_click FOR lo_events .
+*    lo_alv->get_columns( )->
+
+
+
+    lo_alv->display( ).
+
+  ENDMETHOD .
+
+
+
+
+ENDCLASS.
+
+
+CLASS zcl_application IMPLEMENTATION   .
+
+  METHOD on_link_click .
+
+    DATA : lo_obj TYPE REF TO zalv_report .
+
+    lo_obj = NEW #( ).
+
+    lo_obj->getdata(
+      IMPORTING
+
+        gt_pop = data(click)
+    ).
+
+    DATA(click_get) = click[ row ] .
+
+
+
+
+    cl_demo_output=>display(
+      EXPORTING
+        data =  click_get   " Text or Data
+*    name = click_get
+    ).
+
+
+  ENDMETHOD .
+
+
+ENDCLASS.
+
+START-OF-SELECTION .
+
+
+
+  DATA : lo_obj TYPE REF TO zalv_report .
+*
+*  CREATE OBJECT lo_obj .
+
+  lo_obj = NEW #( ).
+*
+
+  CALL METHOD lo_obj->getdata
+    IMPORTING
+      gt_pop = DATA(gt_ginal).
+
+  CALL METHOD lo_obj->display
+    CHANGING
+      lv_display = gt_ginal.
+
+
+
+
+*zalv_report=>getdata(
+*  IMPORTING
+*    lv_final = data(gt_final)
+*).
+*
+*zalv_report=>display( lv_display = gt_final ) .
