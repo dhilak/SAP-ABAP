@@ -1,0 +1,501 @@
+*&---------------------------------------------------------------------*
+*& Report ZTEST1
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT ZTEST1.
+
+
+
+
+
+
+CLASS zcl_excel_uploader DEFINITION .""PUBLIC FINAL.
+  PUBLIC SECTION.
+    DATA:
+      mt_data       TYPE REF TO data.
+
+    data : tab           type        abap_componentdescr,
+           go_sdescr_new type ref to cl_abap_structdescr,
+           go_tdescr     type ref to cl_abap_tabledescr.
+    data :  gt_components type abap_component_tab.
+
+    types : t_tab type STANDARD TABLE OF ABAP_COMPONENT_TAB with DEFAULT KEY  .
+
+    types : begin of ty_stru,
+
+              METER       type ZMETER,
+              CODE        type ZCODE,
+              FEEDER_DESC type ZFDESC,
+              KWH         type ZKWH,
+              ACTIVE      type ZACT,
+
+            end of ty_stru ,
+            tt_stru type STANDARD TABLE OF ty_stru.
+
+    data : gt_output type table of ty_stru.
+    data : gt_get_data type table of ty_stru.
+
+    METHODS:
+      constructor IMPORTING iv_filename           TYPE rlgrap-filename
+                            iv_last_column_number TYPE i
+                            iv_number_of_rows     TYPE i
+                            iv_first_data_row     TYPE i DEFAULT 2
+                            iv_names_row          TYPE i DEFAULT 2
+                            iv_dataelements_row   TYPE i DEFAULT 2,
+      output EXPORTING gt_data  type tt_stru .
+
+  PRIVATE SECTION.
+    TYPES: BEGIN OF ty_tab,
+             name    TYPE char30,
+             dt_name TYPE char30,
+           END OF ty_tab,
+           tt_tab TYPE TABLE OF ty_tab WITH EMPTY KEY.
+    DATA:
+      mt_excel_data         TYPE TABLE OF alsmex_tabline,
+      mt_name_dataelement   TYPE tt_tab,
+      mt_components         TYPE cl_abap_structdescr=>component_table,
+      ms_data               TYPE REF TO data,
+      mv_filename           TYPE rlgrap-filename,
+      mv_last_column_number TYPE i,
+      mv_number_of_rows     TYPE i,
+      mv_first_data_row     TYPE i,
+      mv_names_row          TYPE i,
+      mv_dataelements_row   TYPE i,
+
+      mo_salv               TYPE REF TO cl_salv_table.
+
+    METHODS:
+      upload_excel,
+      build_table_from_excel,
+      build_components_table RETURNING VALUE(rt_components) TYPE cl_abap_structdescr=>component_table,
+      fill_data_table,
+      get_column_names.
+
+ENDCLASS.
+
+
+
+CLASS ZCL_EXCEL_UPLOADER IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_EXCEL_UPLOADER->BUILD_COMPONENTS_TABLE
+* +-------------------------------------------------------------------------------------------------+
+* | [<-()] RT_COMPONENTS                  TYPE        CL_ABAP_STRUCTDESCR=>COMPONENT_TABLE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD build_components_table.
+
+    DATA: lr_description TYPE REF TO cl_abap_typedescr.
+
+    mt_name_dataelement = VALUE #( FOR i IN mt_excel_data
+                                   WHERE ( row = '1' )
+                                    (
+                                      name    = mt_excel_data[ col = i-col row = mv_names_row ]-value
+                                      dt_name = i-value
+                                     )
+                                  ).
+
+    LOOP AT mt_name_dataelement ASSIGNING FIELD-SYMBOL(<ls_name_dataelement>).
+      cl_abap_typedescr=>describe_by_name(
+        EXPORTING
+            p_name = CONV #( <ls_name_dataelement>-dt_name )
+        RECEIVING
+            p_descr_ref = lr_description
+        EXCEPTIONS
+            type_not_found = 1
+            OTHERS         = 2 ).
+      IF sy-subrc <> 0.
+
+      ELSE.
+        APPEND VALUE #( name = <ls_name_dataelement>-name
+                        type = cl_abap_elemdescr=>get_by_kind( p_type_kind = lr_description->type_kind
+                                                               p_length    = lr_description->length
+                                                               p_decimals  = lr_description->decimals ) ) TO rt_components.
+      ENDIF.
+    ENDLOOP.
+
+    CHECK mt_components IS INITIAL.
+    mt_components = rt_components.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_EXCEL_UPLOADER->BUILD_TABLE_FROM_EXCEL
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD build_table_from_excel.
+
+
+    loop at MT_EXCEL_DATA into data(ms_excel_data) where row = '2' .
+
+
+      tab-TYPE ?= cl_abap_datadescr=>DESCRIBE_BY_NAME( 'CHAR20' ) .
+      tab-NAME = MS_EXCEL_DATA-VALUE .
+      append tab to GT_COMPONENTS .
+      clear tab .
+    ENDLOOP.
+
+    TRY.
+
+        go_sdescr_new = cl_abap_structdescr=>create( gt_components ).
+        go_tdescr = cl_abap_tabledescr=>create( go_sdescr_new ).
+
+
+*        DATA(lr_structure) = cl_abap_structdescr=>CREATE( GT_COMPONENTS ) .
+*                             CATCH CX_SY_STRUCT_CREATION. " Exception when creating a structure description( me->BUILD_COMPONENTS_TABLE( ) ).
+*        DATA(lr_table) = cl_abap_tabledescr=>create( p_line_type = CAST #( lr_structure ) ).
+**      CATCH cx_sy_struct_creation.
+
+      CATCH cx_sy_table_creation.
+
+    ENDTRY.
+
+    CREATE DATA ms_data TYPE HANDLE go_sdescr_new.
+
+    CREATE DATA mt_data TYPE HANDLE go_tdescr.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_EXCEL_UPLOADER->CONSTRUCTOR
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_FILENAME                    TYPE        RLGRAP-FILENAME
+* | [--->] IV_LAST_COLUMN_NUMBER          TYPE        I
+* | [--->] IV_NUMBER_OF_ROWS              TYPE        I
+* | [--->] IV_FIRST_DATA_ROW              TYPE        I (default =4)
+* | [--->] IV_NAMES_ROW                   TYPE        I (default =1)
+* | [--->] IV_DATAELEMENTS_ROW            TYPE        I (default =2)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD constructor.
+
+    mv_filename = iv_filename.
+    mv_last_column_number = iv_last_column_number.
+    mv_number_of_rows = iv_number_of_rows.
+    mv_first_data_row = iv_first_data_row.
+    mv_names_row       = iv_names_row.
+    mv_dataelements_row  = iv_dataelements_row.
+
+    me->upload_excel( ).
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_EXCEL_UPLOADER->DISPLAY
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD output.
+    FIELD-SYMBOLS <lt_table> TYPE ANY TABLE.
+
+    ASSIGN mt_data->* TO <lt_table>.
+
+    TRY.
+
+
+        MOVE-CORRESPONDING <lt_table> TO GT_DATA[].
+*        cl_salv_table=>factory(
+*          IMPORTING
+*            r_salv_table = mo_salv
+*          CHANGING
+*            t_table      = <lt_table> ).
+*      CATCH cx_salv_msg.
+
+    ENDTRY.
+**GT_DATA = <lt_table> .
+*    me->get_column_names( ).
+*    mo_salv->display( ).
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_EXCEL_UPLOADER->FILL_DATA_TABLE
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD fill_data_table.
+
+    FIELD-SYMBOLS: <data>      TYPE ANY TABLE,
+                   <data_line> TYPE any.
+
+    ASSIGN mt_data->* TO <data>.
+    ASSIGN ms_data->* TO <data_line>.
+
+    LOOP AT mt_excel_data ASSIGNING FIELD-SYMBOL(<excel_data_line>) WHERE row >= mv_first_data_row.
+      ASSIGN COMPONENT mt_excel_data[ row = mv_names_row col = <excel_data_line>-col ]-value OF STRUCTURE <data_line> TO FIELD-SYMBOL(<cell>).
+      IF sy-subrc = 0.
+        <cell> = <excel_data_line>-value.
+      ENDIF.
+      AT END OF row.
+        INSERT <data_line> INTO TABLE <data>.
+        CLEAR <data_line>.
+      ENDAT.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_EXCEL_UPLOADER->GET_COLUMN_NAMES
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD get_column_names.
+
+    DATA lt_dd04 TYPE TABLE OF dd04t.
+    DATA(lo_columns) = mo_salv->get_columns( ).
+
+    LOOP AT mt_name_dataelement ASSIGNING FIELD-SYMBOL(<ls_name_dataelement>).
+      DATA(lo_column) = lo_columns->get_column( columnname = <ls_name_dataelement>-name ).
+      DATA(lv_roll_name) = CONV dd04l-rollname( <ls_name_dataelement>-dt_name ).
+      CALL FUNCTION 'DD_DTEL_GET'
+        EXPORTING
+          langu         = sy-langu
+          roll_name     = lv_roll_name
+        TABLES
+          dd04t_tab_n   = lt_dd04
+        EXCEPTIONS
+          illegal_value = 1
+          OTHERS        = 2.
+      IF sy-subrc = 0.
+        lo_column->set_long_text( value = lt_dd04[ 1 ]-scrtext_l ).
+        lo_column->set_medium_text( value = lt_dd04[ 1 ]-scrtext_m ).
+        lo_column->set_short_text( value = lt_dd04[ 1 ]-scrtext_s ).
+      ENDIF.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_EXCEL_UPLOADER->UPLOAD_EXCEL
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD upload_excel.
+
+    cl_progress_indicator=>progress_indicate(
+      EXPORTING
+        i_text               = |Uploading excel file...|
+        i_processed          = 0
+        i_total              = 1
+        i_output_immediately = abap_false
+    ).
+
+    CALL FUNCTION 'ALSM_EXCEL_TO_INTERNAL_TABLE'
+      EXPORTING
+        filename                = mv_filename
+        i_begin_col             = 1
+        i_begin_row             = 1
+        i_end_col               = mv_last_column_number
+        i_end_row               = mv_number_of_rows
+      TABLES
+        intern                  = mt_excel_data
+      EXCEPTIONS
+        inconsistent_parameters = 1
+        upload_ole              = 2
+        OTHERS                  = 3.
+    IF sy-subrc <> 0.
+
+    ENDIF.
+    delete mt_excel_data where ROW = '1' .
+    delete mt_excel_data where ROW = '2' .
+
+    REPLACE ALL OCCURRENCES OF  REGEX 'Meter No.'
+      IN TABLE mt_excel_data WITH 'METER'
+      RESPECTING CASE.
+
+    REPLACE ALL OCCURRENCES OF  REGEX 'yes'
+    IN TABLE mt_excel_data WITH 'Y'
+    RESPECTING CASE.
+
+    REPLACE ALL OCCURRENCES OF  REGEX 'Feeder Description'
+    IN TABLE mt_excel_data WITH 'FEEDER_DESC'
+    RESPECTING CASE.
+
+    REPLACE ALL OCCURRENCES OF  REGEX 'HT PANEL'
+    IN TABLE mt_excel_data WITH 'ZHT'
+    RESPECTING CASE.
+    REPLACE ALL OCCURRENCES OF  REGEX 'LT PANEL INCOMER'
+IN TABLE mt_excel_data WITH 'ZLT'
+RESPECTING CASE.
+    REPLACE ALL OCCURRENCES OF  REGEX 'DG INCOMER'
+IN TABLE mt_excel_data WITH 'ZDG'
+RESPECTING CASE.
+    REPLACE ALL OCCURRENCES OF  REGEX 'ROASTER'
+IN TABLE mt_excel_data WITH 'ZRS'
+RESPECTING CASE.
+    REPLACE ALL OCCURRENCES OF  REGEX 'PROCESS UTILITY'
+IN TABLE mt_excel_data WITH 'ZPU'
+RESPECTING CASE.
+    REPLACE ALL OCCURRENCES OF  REGEX 'EXTRACTION & EVAPORATION'
+IN TABLE mt_excel_data WITH 'ZEE'
+RESPECTING CASE.
+    REPLACE ALL OCCURRENCES OF  REGEX 'AROMA'
+IN TABLE mt_excel_data WITH 'ZAR'
+RESPECTING CASE.
+    REPLACE ALL OCCURRENCES OF  REGEX 'FD'
+IN TABLE mt_excel_data WITH 'ZFD'
+RESPECTING CASE.
+    REPLACE ALL OCCURRENCES OF  REGEX 'RAW WATER'
+IN TABLE mt_excel_data WITH 'ZRW'
+RESPECTING CASE.
+    REPLACE ALL OCCURRENCES OF  REGEX 'BOILER'
+IN TABLE mt_excel_data WITH 'ZBL'
+RESPECTING CASE.
+
+    REPLACE ALL OCCURRENCES OF  REGEX 'BOILER'
+IN TABLE mt_excel_data WITH 'ZBL'
+RESPECTING CASE.
+    REPLACE ALL OCCURRENCES OF  REGEX 'BOILER'
+IN TABLE mt_excel_data WITH 'ZBL'
+RESPECTING CASE.
+    REPLACE ALL OCCURRENCES OF  REGEX 'BOILER'
+IN TABLE mt_excel_data WITH 'ZBL'
+RESPECTING CASE.
+*delete mt_excel_data where VALUE = 'HT PANEL' .
+*delete mt_excel_data where VALUE = 'LT PANEL INCOMER' .
+*delete mt_excel_data where VALUE = 'DG INCOMER' .
+*delete mt_excel_data where VALUE = 'ROASTER' .
+*delete mt_excel_data where VALUE = 'PROCESS UTILITY' .
+*delete mt_excel_data where VALUE = 'EXTRACTION & EVAPORATION' .
+*delete mt_excel_data where VALUE = 'AROMA' .
+*delete mt_excel_data where VALUE = 'FD' .
+*delete mt_excel_data where VALUE = 'RAW WATER' .
+*delete mt_excel_data where VALUE = 'BOILER' .
+    delete mt_excel_data where VALUE = 'Water Management' .
+    delete mt_excel_data where VALUE = 'FIRE' .
+    delete mt_excel_data where VALUE = 'GENERAL POWER' .
+    delete mt_excel_data where VALUE = 'Lighting' .
+    delete mt_excel_data where VALUE = 'Domestic' .
+*
+*delete mt_excel_data where ROW = '3' .
+
+
+    data(gt_excel) = mt_excel_data[] .
+    delete ADJACENT DUPLICATES FROM GT_EXCEL COMPARING ROW .
+    data(sno) = 0 .
+    loop at gt_excel into data(gs_excel) .
+
+      sno = sno + 1 .
+
+      loop at mt_excel_data ASSIGNING FIELD-SYMBOL(<ms_excel_data>) where ROW = gs_excel-ROW .
+
+        <ms_excel_data>-ROW = sno .
+      endloop.
+
+
+    endloop.
+
+
+
+    me->build_table_from_excel( ).
+    me->fill_data_table( ).
+
+  ENDMETHOD.
+ENDCLASS.
+
+DATA gt_filetable TYPE filetable.
+
+FIELD-SYMBOLS <gt_table> TYPE ANY TABLE.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-100.
+  PARAMETERS: p_file LIKE rlgrap-filename MEMORY ID ad_local_path OBLIGATORY MODIF ID fil.
+  PARAMETERS: p_colnum TYPE i OBLIGATORY DEFAULT 4.
+  PARAMETERS: p_rownum TYPE i OBLIGATORY DEFAULT 5.
+SELECTION-SCREEN END OF BLOCK b1.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
+  DATA: lv_return_code TYPE i.
+  cl_gui_frontend_services=>file_open_dialog(
+    EXPORTING
+      window_title            = 'Upload Excel'
+      default_filename        = ''
+      initial_directory       = CONV #( p_file )
+      multiselection          = ''
+    CHANGING
+      file_table              = gt_filetable
+      rc                      = lv_return_code
+    EXCEPTIONS
+      file_open_dialog_failed = 1
+      cntl_error              = 2
+      error_no_gui            = 3
+      not_supported_by_gui    = 4
+      OTHERS                  = 5
+  ).
+  IF sy-subrc <> 0.
+    EXIT.
+  ENDIF.
+
+  p_file = gt_filetable[ 1 ].
+
+START-OF-SELECTION.
+  data :  gt_insert type table of ZEMS_GRP_WISECON.
+
+
+  NEW zcl_excel_uploader( iv_filename           = p_file
+                          iv_last_column_number = p_colnum
+                          iv_number_of_rows     = p_rownum
+*                       iv_first_data_row     = 4
+*                       iv_names_row          = 1
+*                       iv_dataelements_row   = 2
+                                                          )->OUTPUT(
+    IMPORTING
+      GT_DATA = data(gt1)
+  ).
+data(code) = 'ZHT'.
+  if gt1 is not initial.
+
+    delete gt1 where METER = 'METER'.
+    delete gt1 where METER is initial .
+
+    loop at gt1 ASSIGNING FIELD-SYMBOL(<gs1>) .
+
+      if <gs1>-METER na '123456790.'.
+
+        code = <gs1>-METER .
+
+        endif.
+<gs1>-CODE = code .
+
+
+
+
+
+
+
+
+    endloop.
+    delete gt1 where FEEDER_DESC is initial.
+
+    GT_INSERT = CORRESPONDING #( GT1 ) .
+*
+    cl_progress_indicator=>progress_indicate(
+      EXPORTING
+        i_text               = |Inserting Data.....|
+        i_processed          = 0
+        i_total              = 1
+        i_output_immediately = abap_false
+    ).
+
+    TRY .
+
+        insert ZEMS_GRP_WISECON from TABLE GT_INSERT .
+
+        if sy-subrc = 0 .
+
+          MESSAGE |Uploaded Sucessfully!!!| type 'S' .
+
+        endif.
+
+      CATCH CX_SY_OPEN_SQL_DB .
+
+        MESSAGE |Duplicate Data Found!!!!!| type 'E' .
+
+    ENDTRY.
+*
+  else .
+*
+    MESSAGE |No data Found!!!!| type 'E' .
+
+  endif .
